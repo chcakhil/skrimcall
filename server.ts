@@ -1,3 +1,4 @@
+// NOTE: This server.ts file will be upgraded in a later phase to integrate with the standalone Secure Communication Library.
 import express from "express";
 import http from "http";
 import path from "path";

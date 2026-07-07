@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { generateKeyPair, encryptMessage, decryptMessage, ensureReady } from './encryption';
+import { generateKeyPair, encryptMessage, decryptMessage, ensureReady } from './box';
 
-describe('End-to-End Encryption with Libsodium', () => {
+describe('End-to-End Encryption with Libsodium (Relocated Box)', () => {
   
   it('should generate valid Base64 encoded public and private keypairs', async () => {
     await ensureReady();
