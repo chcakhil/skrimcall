@@ -23,8 +23,16 @@ import {
   RefreshCw,
   Search,
   BookOpen,
+  Phone,
+  PhoneCall,
+  PhoneOff,
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
 } from "lucide-react";
 import { generateKeyPair, encryptMessage, decryptMessage, ensureReady } from "./lib/crypto/box";
+import { CallManager } from "./lib/calling/webrtc";
 
 interface LogEntry {
   id: string;
@@ -46,6 +54,20 @@ export default function App() {
   const [targetId, setTargetId] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
   const logsEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Real 1:1 WebRTC Call States
+  const [callState, setCallState] = useState<'idle' | 'acquiring' | 'calling' | 'ringing' | 'connected' | 'ended'>('idle');
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(false);
+  const [pcConnectionState, setPcConnectionState] = useState<string>("NEW");
+  const [iceConnectionState, setIceConnectionState] = useState<string>("NEW");
+  const [signalingState, setSignalingState] = useState<string>("STABLE");
+
+  const callManagerRef = useRef<CallManager | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // E2E Encryption Tab States
   const [sodiumLoaded, setSodiumLoaded] = useState(false);
@@ -118,6 +140,66 @@ export default function App() {
     }
   }, [logs]);
 
+  // Setup CallManager callbacks and identities
+  useEffect(() => {
+    if (!callManagerRef.current) {
+      callManagerRef.current = new CallManager(userId, roomId);
+    } else {
+      callManagerRef.current.setIdentity(userId, roomId);
+    }
+
+    callManagerRef.current.callbacks = {
+      onLocalStream: (stream) => {
+        setLocalStream(stream);
+      },
+      onRemoteStream: (stream) => {
+        setRemoteStream(stream);
+      },
+      onCallStateChange: (state) => {
+        setCallState(state);
+      },
+      onSignalingMessage: (msg) => {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify(msg));
+        }
+      },
+      onConnStateChange: (state) => {
+        setPcConnectionState(state);
+      },
+      onIceStateChange: (state) => {
+        setIceConnectionState(state);
+      },
+      onSigStateChange: (state) => {
+        setSignalingState(state);
+      },
+      onLog: (direction, type, payload) => {
+        addLog(direction, type, payload);
+      }
+    };
+  }, [userId, roomId, connected]);
+
+  // Bind media stream updates to video element refs
+  useEffect(() => {
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = localStream;
+    }
+  }, [localStream]);
+
+  useEffect(() => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
+  }, [remoteStream]);
+
+  // Clear call on unmount
+  useEffect(() => {
+    return () => {
+      if (callManagerRef.current) {
+        callManagerRef.current.resetCallState();
+      }
+    };
+  }, []);
+
   const addLog = (direction: "in" | "out" | "sys", type: string, payload: any) => {
     const newEntry: LogEntry = {
       id: Math.random().toString(36).substr(2, 9),
@@ -177,6 +259,32 @@ export default function App() {
           });
         } else if (data.type === "user-left") {
           setMembers((prev) => prev.filter((id) => id !== data.userId));
+          if (callManagerRef.current && callManagerRef.current.getCurrentCallPeer() === data.userId) {
+            addLog("sys", "webrtc", `Active peer ${data.userId} left the room. Tearing down call.`);
+            callManagerRef.current.resetCallState();
+          }
+        } else if (data.type === "offer") {
+          if (callManagerRef.current) {
+            callManagerRef.current.handleIncomingOffer(data.senderId, data.sdp);
+          }
+        } else if (data.type === "answer") {
+          if (callManagerRef.current) {
+            callManagerRef.current.handleIncomingAnswer(data.senderId, data.sdp);
+          }
+        } else if (data.type === "ice-candidate") {
+          if (callManagerRef.current) {
+            callManagerRef.current.handleIceCandidate(data.senderId, data.candidate);
+          }
+        } else if (data.type === "call-decline") {
+          if (callManagerRef.current && callManagerRef.current.getCurrentCallPeer() === data.senderId) {
+            addLog("sys", "webrtc", `Call request declined by peer ${data.senderId}`);
+            callManagerRef.current.resetCallState();
+          }
+        } else if (data.type === "hangup") {
+          if (callManagerRef.current && callManagerRef.current.getCurrentCallPeer() === data.senderId) {
+            addLog("sys", "webrtc", `Call hung up by peer ${data.senderId}`);
+            callManagerRef.current.resetCallState();
+          }
         }
       } catch (err) {
         addLog("sys", "ERROR", `Raw websocket message received: ${event.data}`);
@@ -186,6 +294,9 @@ export default function App() {
     ws.onclose = () => {
       setConnected(false);
       setMembers([]);
+      if (callManagerRef.current) {
+        callManagerRef.current.resetCallState();
+      }
       addLog("sys", "DISCONNECTED", "WebSocket connection closed.");
     };
 
@@ -195,6 +306,9 @@ export default function App() {
   };
 
   const disconnect = () => {
+    if (callManagerRef.current) {
+      callManagerRef.current.resetCallState();
+    }
     if (wsRef.current) {
       const leavePayload = { type: "leave" };
       try {
@@ -203,37 +317,6 @@ export default function App() {
       } catch (e) {}
       wsRef.current.close();
     }
-  };
-
-  const sendSignal = (type: "offer" | "answer" | "ice-candidate") => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-
-    let payload: any = {
-      type,
-      roomId,
-      targetId: targetId || undefined,
-    };
-
-    if (type === "offer") {
-      payload.sdp = {
-        type: "offer",
-        sdp: `v=0\r\no=- ${Math.floor(Math.random() * 1000000)} IN IP4 127.0.0.1\r\ns=Skrim-Call-Test\r\nt=0 0\r\na=group:BUNDLE audio video\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111 103\r\na=setup:actpass\r\na=mid:audio\r\n`,
-      };
-    } else if (type === "answer") {
-      payload.sdp = {
-        type: "answer",
-        sdp: `v=0\r\no=- ${Math.floor(Math.random() * 1000000)} IN IP4 127.0.0.1\r\ns=Skrim-Call-Test\r\nt=0 0\r\na=group:BUNDLE audio video\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=setup:active\r\na=mid:audio\r\n`,
-      };
-    } else if (type === "ice-candidate") {
-      payload.candidate = {
-        candidate: `candidate:${Math.floor(Math.random() * 1000000000)} 1 UDP ${Math.floor(Math.random() * 100000)} 127.0.0.1 ${Math.floor(Math.random() * 60000 + 1000)} typ host`,
-        sdpMid: "audio",
-        sdpMLineIndex: 0,
-      };
-    }
-
-    wsRef.current.send(JSON.stringify(payload));
-    addLog("out", type, payload);
   };
 
   // ==========================================
@@ -1111,28 +1194,161 @@ export default function App() {
                   </select>
                 </div>
 
-                <div className="space-y-2 pt-1">
-                  <span className="text-[11px] font-medium text-slate-400 uppercase block tracking-wider">Trigger Synthetic WebRTC Signals</span>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      onClick={() => sendSignal("offer")}
-                      className="bg-indigo-600 hover:bg-indigo-500 transition-all text-white text-xs font-medium py-2 rounded-lg cursor-pointer"
-                    >
-                      Send Offer
-                    </button>
-                    <button
-                      onClick={() => sendSignal("answer")}
-                      className="bg-emerald-600 hover:bg-emerald-500 transition-all text-white text-xs font-medium py-2 rounded-lg cursor-pointer"
-                    >
-                      Send Answer
-                    </button>
-                    <button
-                      onClick={() => sendSignal("ice-candidate")}
-                      className="bg-amber-600 hover:bg-amber-500 transition-all text-white text-xs font-medium py-2 rounded-lg cursor-pointer"
-                    >
-                      Send ICE
-                    </button>
+                {/* Real-time 1:1 Call Controls & Video Container */}
+                <div className="border-t border-slate-800/60 pt-4 space-y-4">
+                  <div className="flex items-center space-x-2 text-slate-300">
+                    <Phone className="h-4 w-4 text-sky-400" />
+                    <span className="text-xs font-semibold uppercase tracking-wider">Secure 1:1 Call Panel</span>
                   </div>
+
+                  {callState === "idle" && (
+                    <div className="space-y-3">
+                      <button
+                        onClick={async () => {
+                          if (!targetId) {
+                            addLog("sys", "webrtc", "Error: Select an active room member to call first.");
+                            return;
+                          }
+                          try {
+                            await callManagerRef.current?.createCall(targetId);
+                          } catch (e) {}
+                        }}
+                        disabled={!targetId}
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed transition-all text-white text-xs font-semibold py-2.5 rounded-xl flex items-center justify-center space-x-2 cursor-pointer"
+                      >
+                        <Video className="h-4 w-4" />
+                        <span>Start Video Call</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {callState === "acquiring" && (
+                    <div className="bg-slate-950 rounded-xl p-4 border border-slate-850/80 text-center space-y-2">
+                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-sky-500 border-t-transparent mx-auto"></div>
+                      <p className="text-xs text-slate-400 font-mono">Accessing Camera & Mic...</p>
+                    </div>
+                  )}
+
+                  {callState === "calling" && (
+                    <div className="bg-slate-950 rounded-xl p-4 border border-slate-850/80 text-center space-y-3">
+                      <div className="animate-pulse flex justify-center space-x-2">
+                        <span className="h-2 w-2 bg-sky-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                        <span className="h-2 w-2 bg-sky-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                        <span className="h-2 w-2 bg-sky-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                      </div>
+                      <p className="text-xs text-slate-400 font-mono">Connecting session with peer...</p>
+                      <button
+                        onClick={() => callManagerRef.current?.endCall()}
+                        className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium py-1.5 px-4 rounded-lg cursor-pointer"
+                      >
+                        Cancel Call
+                      </button>
+                    </div>
+                  )}
+
+                  {callState === "ringing" && (
+                    <div className="bg-slate-950 rounded-xl p-4 border border-rose-500/30 text-center space-y-3">
+                      <PhoneCall className="h-6 w-6 text-emerald-400 mx-auto animate-bounce" />
+                      <div className="space-y-1">
+                        <p className="text-xs font-bold text-slate-200">Incoming Call Request!</p>
+                        <p className="text-[10px] text-slate-400 font-mono">From: {callManagerRef.current?.getCurrentCallPeer()}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <button
+                          onClick={() => callManagerRef.current?.acceptCall()}
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2 rounded-lg cursor-pointer"
+                        >
+                          Accept
+                        </button>
+                        <button
+                          onClick={() => callManagerRef.current?.declineCall()}
+                          className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold py-2 rounded-lg cursor-pointer"
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {callState === "connected" && (
+                    <div className="space-y-4">
+                      {/* Video Stream Container */}
+                      <div className="relative w-full aspect-video bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+                        {/* Remote Video (Takes up full frame) */}
+                        <video
+                          id="remote-video"
+                          ref={remoteVideoRef}
+                          autoPlay
+                          playsInline
+                          className="w-full h-full object-cover"
+                        />
+                        
+                        {/* Local Video (Floating picture-in-picture) */}
+                        <div className="absolute bottom-3 right-3 w-32 h-24 rounded-xl overflow-hidden border border-sky-500 shadow-xl bg-slate-900 z-10">
+                          <video
+                            id="local-video"
+                            ref={localVideoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+
+                        {/* Connection State Info Overlay */}
+                        <div className="absolute top-3 left-3 bg-slate-950/85 backdrop-blur-md px-2.5 py-1.5 rounded-lg border border-slate-800 text-[10px] font-mono space-y-0.5 text-slate-400">
+                          <div>Conn: <span className="text-emerald-400 font-bold">{pcConnectionState}</span></div>
+                          <div>ICE: <span className="text-emerald-400 font-semibold">{iceConnectionState}</span></div>
+                          <div>Sig: <span className="text-emerald-400">{signalingState}</span></div>
+                        </div>
+                      </div>
+
+                      {/* Control Actions bar */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          onClick={() => {
+                            if (callManagerRef.current) {
+                              callManagerRef.current.muteMic(!isMuted);
+                              setIsMuted(!isMuted);
+                            }
+                          }}
+                          className={`py-2 rounded-lg text-xs font-semibold cursor-pointer flex items-center justify-center space-x-1.5 transition-colors ${
+                            isMuted
+                              ? "bg-amber-600 hover:bg-amber-500 text-white"
+                              : "bg-slate-850 hover:bg-slate-800 text-slate-300 border border-slate-800"
+                          }`}
+                        >
+                          {isMuted ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+                          <span>{isMuted ? "Unmute" : "Mute"}</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            if (callManagerRef.current) {
+                              callManagerRef.current.toggleCamera(isCameraOff);
+                              setIsCameraOff(!isCameraOff);
+                            }
+                          }}
+                          className={`py-2 rounded-lg text-xs font-semibold cursor-pointer flex items-center justify-center space-x-1.5 transition-colors ${
+                            isCameraOff
+                              ? "bg-amber-600 hover:bg-amber-500 text-white"
+                              : "bg-slate-850 hover:bg-slate-800 text-slate-300 border border-slate-800"
+                          }`}
+                        >
+                          {isCameraOff ? <VideoOff className="h-3.5 w-3.5" /> : <Video className="h-3.5 w-3.5" />}
+                          <span>{isCameraOff ? "Cam On" : "Cam Off"}</span>
+                        </button>
+
+                        <button
+                          onClick={() => callManagerRef.current?.endCall()}
+                          className="bg-rose-600 hover:bg-rose-500 text-white py-2 rounded-lg text-xs font-semibold cursor-pointer flex items-center justify-center space-x-1.5"
+                        >
+                          <PhoneOff className="h-3.5 w-3.5" />
+                          <span>End Call</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

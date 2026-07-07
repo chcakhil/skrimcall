@@ -19,7 +19,7 @@ services:
     # CLI Command Configuration for Coturn
     # -v: Enables verbose logging to output credential checking and ICE peer state logs
     # --lt-cred-mech: Enables the mandatory Long Term Credential Mechanism for TURN authentication
-    # --user: Credentials for local authentication. Format: "<username>:<password>"
+    # --user: Credentials for local authentication. Format: "<username>:<password>" (Matches the fallback in getIceServers() in src/lib/calling/webrtc.ts)
     # --realm: Authentication realm (defaults to domain, e.g., "skrimcalling.local")
     # --external-ip: External public/local address mapping (use 127.0.0.1 for local localhost loopback test)
     command: >
