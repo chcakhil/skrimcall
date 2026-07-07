@@ -216,6 +216,81 @@
           </div>
         </div>
 
+        <!-- Mediasoup One-to-Many Live Streaming Card -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-medium uppercase tracking-wider text-slate-400">5. Mediasoup 1-to-Many Live Streaming</h2>
+            <div class="flex items-center space-x-2">
+              <span id="live-viewer-badge" class="text-[9px] font-mono px-2 py-0.5 rounded bg-slate-950 text-slate-400 font-bold flex items-center space-x-1">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                <span id="live-viewer-count">0 Viewers</span>
+              </span>
+              <span id="live-state" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-950 text-slate-500 font-bold uppercase">
+                IDLE
+              </span>
+            </div>
+          </div>
+
+          <p class="text-xs text-slate-500">
+            One-to-many live streaming. Publish your video stream as a Broadcaster, or connect as a read-only Viewer. Includes a live chat channel.
+          </p>
+
+          <!-- Streaming Live Video Player -->
+          <div class="relative bg-slate-950 border border-slate-800/80 rounded-lg p-1.5 min-h-[180px] max-h-[320px] flex items-center justify-center overflow-hidden">
+            <div id="live-empty-msg" class="text-center py-10 text-xs text-slate-500 italic">
+              Join as Broadcaster (Go Live) or Viewer to start the live stream.
+            </div>
+            <div id="live-video-wrapper" class="hidden w-full h-full relative aspect-video rounded overflow-hidden bg-slate-900">
+              <video id="live-video" autoplay playsinline class="w-full h-full object-cover"></video>
+              <span id="live-video-role" class="absolute bottom-1 right-1 text-[8px] bg-slate-950/80 px-1 py-0.5 rounded text-slate-300 font-mono border border-slate-800/40">Broadcaster</span>
+            </div>
+          </div>
+
+          <!-- Controls -->
+          <div class="grid grid-cols-3 gap-2">
+            <button onclick="startLiveBroadcaster()" id="btn-go-live" class="bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-1 shadow-lg shadow-rose-950/20">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              <span>Go Live</span>
+            </button>
+            <button onclick="startLiveViewer()" id="btn-join-live" class="bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-1 shadow-lg shadow-sky-950/20">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+              <span>Join Live</span>
+            </button>
+            <button onclick="leaveLiveStream()" id="btn-leave-live" disabled class="bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-1">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              <span>Stop</span>
+            </button>
+          </div>
+
+          <!-- Live Chat Box -->
+          <div class="bg-slate-950 border border-slate-800/80 rounded-lg p-3 space-y-2">
+            <span class="text-[10px] font-mono text-slate-400 font-semibold uppercase tracking-wide">Live Chat Room</span>
+            
+            <!-- Chat logs -->
+            <div id="live-chat-logs" class="h-[120px] overflow-y-auto bg-slate-900/60 rounded p-2 text-xs font-mono space-y-1.5 border border-slate-800/40">
+              <div class="text-slate-500 italic">No chat messages yet...</div>
+            </div>
+
+            <!-- Chat inputs -->
+            <div class="flex space-x-2">
+              <input type="text" id="live-chat-input" placeholder="Type a message..." onkeydown="if(event.key === 'Enter') sendLiveChatMessage()" class="flex-1 bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono" />
+              <button onclick="sendLiveChatMessage()" id="btn-send-chat" class="bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium px-3 py-1 rounded transition-all cursor-pointer">
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- WebRTC Test Signal Panel -->
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
           <h2 class="text-sm font-medium uppercase tracking-wider text-slate-400 mb-3">2. Manual Signal Testing</h2>
@@ -299,6 +374,10 @@
       let lastPacketsLost = 0;
       let isFallbackAudioOnly = false;
 
+      // Live Streaming State trackers
+      let liveRole = null; // 'broadcaster', 'viewer', or null
+      let liveActive = false;
+
       // Extract the local/remote IP or hostname of the machine to allow Multi-Device WiFi testing automatically!
       const currentHost = window.location.hostname || '127.0.0.1';
       const iceConfiguration = {
@@ -376,16 +455,32 @@
       }
 
       function connectAndJoin() {
+        connectWS('normal');
+      }
+
+      function connectWS(role, callback) {
         const roomId = document.getElementById('room-id').value.trim();
         const userId = document.getElementById('user-id').value.trim() || ('peer-' + Math.floor(Math.random() * 9000 + 1000));
         document.getElementById('user-id').value = userId;
 
         if (!roomId) {
-          alert('Please enter a room ID.');
+          alert('Please enter a Room ID.');
           return;
         }
 
-        // Establish socket connection
+        currentRoomId = roomId;
+        currentUserId = userId;
+
+        // If WebSocket is already open, just join the room with role!
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          document.getElementById('sess-info').textContent = `${userId} @ ${roomId} [${role.toUpperCase()}]`;
+          const joinPayload = { type: 'join', roomId, userId, role };
+          ws.send(JSON.stringify(joinPayload));
+          logMessage('out', joinPayload);
+          if (callback) callback();
+          return;
+        }
+
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws`;
 
@@ -402,7 +497,6 @@
           document.getElementById('btn-connect').className = 'w-full bg-slate-800 text-slate-500 text-sm font-medium py-2 rounded-lg transition-colors cursor-not-allowed';
           document.getElementById('btn-disconnect').disabled = false;
           
-          // Disable credentials forms
           document.getElementById('room-id').disabled = true;
           document.getElementById('user-id').disabled = true;
 
@@ -417,14 +511,14 @@
             btnJoinSFU.disabled = false;
           }
 
-          currentRoomId = roomId;
-          currentUserId = userId;
-          document.getElementById('sess-info').textContent = `${userId} @ ${roomId}`;
+          document.getElementById('sess-info').textContent = `${userId} @ ${roomId} [${role.toUpperCase()}]`;
 
           // Send join message
-          const joinPayload = { type: 'join', roomId, userId };
+          const joinPayload = { type: 'join', roomId, userId, role };
           ws.send(JSON.stringify(joinPayload));
           logMessage('out', joinPayload);
+
+          if (callback) callback();
         };
 
         ws.onmessage = (event) => {
@@ -489,6 +583,13 @@
           } else if (payload.type === 'sfu-negotiate') {
             onSFUNegotiate(payload);
           }
+
+          // One-to-Many Live Streaming updates
+          else if (payload.type === 'live-viewer-count-update') {
+            onLiveViewerCountUpdate(payload);
+          } else if (payload.type === 'live-chat-message') {
+            onLiveChatMessageReceived(payload);
+          }
         };
 
         ws.onclose = () => {
@@ -542,6 +643,7 @@
         if (btnLeaveSFU) btnLeaveSFU.disabled = true;
 
         leaveSFUCall();
+        leaveLiveStream();
         resetCallState();
         updateMembersUI();
       }
@@ -1567,6 +1669,16 @@
       }
 
       function addSFUVideoTile(userId, stream) {
+        if (liveRole === 'viewer' || liveRole === 'broadcaster') {
+          const liveVideo = document.getElementById('live-video');
+          if (liveVideo && liveVideo.srcObject !== stream) {
+            liveVideo.srcObject = stream;
+          }
+          document.getElementById('live-empty-msg').classList.add('hidden');
+          document.getElementById('live-video-wrapper').classList.remove('hidden');
+          return;
+        }
+
         const grid = document.getElementById('sfu-video-grid');
         if (!grid) return;
         
@@ -1601,6 +1713,14 @@
       }
 
       function removeSFUVideoTile(userId) {
+        if (liveRole === 'viewer' || liveRole === 'broadcaster') {
+          const liveVideo = document.getElementById('live-video');
+          if (liveVideo) liveVideo.srcObject = null;
+          document.getElementById('live-empty-msg').classList.remove('hidden');
+          document.getElementById('live-video-wrapper').classList.add('hidden');
+          return;
+        }
+
         const tile = document.getElementById(`sfu-tile-${userId}`);
         if (tile) {
           tile.remove();
@@ -1615,6 +1735,173 @@
           if (remoteTiles.length === 0 && localTileHidden) {
             document.getElementById('sfu-empty-grid-msg').classList.remove('hidden');
           }
+        }
+      }
+
+      // ==========================================
+      // ONE-TO-MANY LIVE STREAMING LOGIC
+      // ==========================================
+
+      async function startLiveBroadcaster() {
+        connectWS('broadcaster', async () => {
+          logMessage('sys', 'Initializing Live Broadcaster role...');
+          liveRole = 'broadcaster';
+          liveActive = true;
+          
+          // Update live stream UI states
+          document.getElementById('live-state').textContent = 'BROADCASTING';
+          document.getElementById('live-state').className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-950 text-rose-400 font-bold uppercase border border-rose-900/30 animate-pulse';
+          document.getElementById('btn-go-live').disabled = true;
+          document.getElementById('btn-join-live').disabled = true;
+          document.getElementById('btn-leave-live').disabled = false;
+
+          document.getElementById('live-video-role').textContent = 'Live Broadcaster (You)';
+
+          // Acquire local video/audio tracks
+          try {
+            sfuLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+            const liveVideo = document.getElementById('live-video');
+            if (liveVideo) {
+              liveVideo.srcObject = sfuLocalStream;
+              liveVideo.muted = true; // Avoid feedback loop
+            }
+            document.getElementById('live-empty-msg').classList.add('hidden');
+            document.getElementById('live-video-wrapper').classList.remove('hidden');
+
+            logMessage('sys', 'Broadcaster local media acquired. Fetching SFU capabilities...');
+            ws.send(JSON.stringify({ type: 'sfu-get-router-rtp-capabilities' }));
+            sfuConnected = true;
+          } catch(err) {
+            logMessage('sys', `Broadcaster acquisition failed: ${err.message}`);
+            leaveLiveStream();
+          }
+        });
+      }
+
+      async function startLiveViewer() {
+        connectWS('viewer', () => {
+          logMessage('sys', 'Initializing Live Viewer role...');
+          liveRole = 'viewer';
+          liveActive = true;
+
+          // Update live stream UI states
+          document.getElementById('live-state').textContent = 'VIEWING';
+          document.getElementById('live-state').className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-950 text-sky-400 font-bold uppercase border border-sky-900/30 animate-pulse';
+          document.getElementById('btn-go-live').disabled = true;
+          document.getElementById('btn-join-live').disabled = true;
+          document.getElementById('btn-leave-live').disabled = false;
+
+          document.getElementById('live-video-role').textContent = 'Live Broadcaster';
+
+          logMessage('sys', 'Requesting SFU capabilities to list broadcaster streams...');
+          ws.send(JSON.stringify({ type: 'sfu-get-router-rtp-capabilities' }));
+          sfuConnected = true;
+        });
+      }
+
+      function leaveLiveStream() {
+        if (!liveActive) return;
+        logMessage('sys', 'Stopping Live Stream session and clearing states...');
+
+        liveActive = false;
+        liveRole = null;
+
+        // Reset UI buttons
+        document.getElementById('live-state').textContent = 'IDLE';
+        document.getElementById('live-state').className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-950 text-slate-500 font-bold uppercase';
+        document.getElementById('btn-go-live').disabled = false;
+        document.getElementById('btn-join-live').disabled = false;
+        document.getElementById('btn-leave-live').disabled = true;
+
+        document.getElementById('live-viewer-count').textContent = '0 Viewers';
+
+        // Clear video elements
+        const liveVideo = document.getElementById('live-video');
+        if (liveVideo) liveVideo.srcObject = null;
+        document.getElementById('live-empty-msg').classList.remove('hidden');
+        document.getElementById('live-video-wrapper').classList.add('hidden');
+
+        // Clear chat logs
+        const chatLogs = document.getElementById('live-chat-logs');
+        if (chatLogs) {
+          chatLogs.innerHTML = '<div class="text-slate-500 italic">No chat messages yet...</div>';
+        }
+
+        // Close local tracks if broadcaster
+        if (sfuLocalStream) {
+          sfuLocalStream.getTracks().forEach(track => track.stop());
+          sfuLocalStream = null;
+        }
+
+        // Close sub connections and consumers (same cleanup as leaveSFUCall)
+        sfuSubConnections.forEach((pc) => {
+          pc.close();
+        });
+        sfuSubConnections.clear();
+
+        sfuConsumers.forEach((consumer) => {
+          if (consumer.pc) consumer.pc.close();
+        });
+        sfuConsumers.clear();
+        sfuProducers.clear();
+        sfuSendTransportId = null;
+        sfuConnected = false;
+
+        // Leave room message to the server
+        if (ws) {
+          const leavePayload = { type: 'leave' };
+          try {
+            ws.send(JSON.stringify(leavePayload));
+            logMessage('out', leavePayload);
+          } catch(e) {}
+        }
+      }
+
+      function sendLiveChatMessage() {
+        const input = document.getElementById('live-chat-input');
+        if (!input) return;
+        const text = input.value.trim();
+        if (!text) return;
+
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          alert('WebSocket not connected. Please go live or join live first.');
+          return;
+        }
+
+        const chatPayload = {
+          type: 'live-chat-message',
+          text
+        };
+        ws.send(JSON.stringify(chatPayload));
+        logMessage('out', chatPayload);
+        input.value = '';
+      }
+
+      function onLiveChatMessageReceived(payload) {
+        const { userId, text, timestamp } = payload;
+        const chatLogs = document.getElementById('live-chat-logs');
+        if (!chatLogs) return;
+
+        // If this is the first message, clear placeholder
+        if (chatLogs.querySelector('.italic')) {
+          chatLogs.innerHTML = '';
+        }
+
+        const timeStr = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+        
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'text-slate-300 leading-relaxed break-all';
+        msgDiv.innerHTML = `<span class="text-slate-500 text-[10px] mr-1">[${timeStr}]</span><span class="${userId === currentUserId ? 'text-rose-400 font-bold' : 'text-sky-400 font-bold'}">${userId}:</span> ${text}`;
+        
+        chatLogs.appendChild(msgDiv);
+        chatLogs.scrollTop = chatLogs.scrollHeight;
+      }
+
+      function onLiveViewerCountUpdate(payload) {
+        const { count } = payload;
+        const countEl = document.getElementById('live-viewer-count');
+        if (countEl) {
+          countEl.textContent = `${count} Viewer${count === 1 ? '' : 's'}`;
         }
       }
     </script>

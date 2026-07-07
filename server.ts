@@ -57,8 +57,29 @@ async function startServer() {
   // Map to track rooms: roomId -> Map of userId -> WebSocket
   const rooms = new Map<string, Map<string, WebSocket>>();
 
-  // Map to track active client metadata: WebSocket -> { roomId, userId }
-  const clients = new Map<WebSocket, { roomId: string; userId: string }>();
+  // Map to track active client metadata: WebSocket -> { roomId, userId, role }
+  const clients = new Map<WebSocket, { roomId: string; userId: string; role?: string }>();
+
+  // Broadcast viewer count to all room members
+  function broadcastViewerCount(roomId: string) {
+    const roomMap = rooms.get(roomId);
+    if (!roomMap) return;
+    let count = 0;
+    roomMap.forEach((memberWs) => {
+      const meta = clients.get(memberWs);
+      if (meta && meta.role === "viewer") {
+        count++;
+      }
+    });
+    roomMap.forEach((memberWs) => {
+      if (memberWs.readyState === WebSocket.OPEN) {
+        memberWs.send(JSON.stringify({
+          type: "live-viewer-count-update",
+          count
+        }));
+      }
+    });
+  }
 
   // Mediasoup SFU Routers: roomId -> SFURouter
   const sfuRouters = new Map<string, SFURouter>();
@@ -73,7 +94,7 @@ async function startServer() {
 
         switch (type) {
           case "join": {
-            const { roomId, userId } = message;
+            const { roomId, userId, role } = message;
             if (!roomId || !userId) {
               ws.send(
                 JSON.stringify({
@@ -98,9 +119,9 @@ async function startServer() {
 
             // Register socket
             roomMap.set(userId, ws);
-            clients.set(ws, { roomId, userId });
+            clients.set(ws, { roomId, userId, role: role || "normal" });
 
-            console.log(`[ws] User "${userId}" joined room "${roomId}"`);
+            console.log(`[ws] User "${userId}" joined room "${roomId}" with role "${role || "normal"}"`);
 
             // Fetch current members in room (excluding the joiner)
             const members = Array.from(roomMap.keys()).filter((id) => id !== userId);
@@ -111,6 +132,7 @@ async function startServer() {
                 type: "joined",
                 roomId,
                 userId,
+                role: role || "normal",
                 members,
               })
             );
@@ -122,10 +144,14 @@ async function startServer() {
                   JSON.stringify({
                     type: "user-joined",
                     userId,
+                    role: role || "normal",
                   })
                 );
               }
             });
+
+            // Broadcast viewer count to all members in the room
+            broadcastViewerCount(roomId);
             break;
           }
 
@@ -154,6 +180,25 @@ async function startServer() {
                 ]
               }
             }));
+
+            // Immediately notify this late joiner / viewer about all existing producers in the room!
+            const clientMeta = clients.get(ws);
+            if (clientMeta) {
+              const { roomId, userId } = clientMeta;
+              const router = sfuRouters.get(roomId);
+              if (router) {
+                router.producers.forEach((producer) => {
+                  if (producer.userId !== userId) {
+                    ws.send(JSON.stringify({
+                      type: "sfu-new-producer",
+                      producerId: producer.id,
+                      userId: producer.userId,
+                      kind: producer.kind
+                    }));
+                  }
+                });
+              }
+            }
             break;
           }
 
@@ -364,6 +409,28 @@ async function startServer() {
             break;
           }
 
+          case "live-chat-message": {
+            const clientMeta = clients.get(ws);
+            if (clientMeta) {
+              const { roomId, userId } = clientMeta;
+              const { text } = message;
+              const roomMap = rooms.get(roomId);
+              if (roomMap) {
+                roomMap.forEach((memberWs) => {
+                  if (memberWs.readyState === WebSocket.OPEN) {
+                    memberWs.send(JSON.stringify({
+                      type: "live-chat-message",
+                      userId,
+                      text,
+                      timestamp: new Date().toISOString()
+                    }));
+                  }
+                });
+              }
+            }
+            break;
+          }
+
           default: {
             ws.send(
               JSON.stringify({
@@ -418,6 +485,9 @@ async function startServer() {
           );
         }
       });
+
+      // Broadcast viewer count to all members remaining in the room
+      broadcastViewerCount(roomId);
 
       // Clear empty room
       if (roomMap.size === 0) {
