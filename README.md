@@ -32,13 +32,18 @@ npm run dev
 ```
 The server will boot on `http://localhost:3000` with live reload.
 
-### 3. Open the Testing Panel
-To verify message relaying:
+### 3. Open the Testing Panel & Make Live 1:1 Audio Calls
+To verify message relaying and live WebRTC audio calling:
 1. Open **two separate browser windows/tabs** to `http://localhost:3000/test.html` (or use the built-in React dashboard console on the homepage).
 2. For Tab 1, enter a room ID (e.g., `skrim-test-room`), a custom User ID (e.g., `Alice`), and click **Join Room**.
 3. For Tab 2, enter the *same* room ID (`skrim-test-room`), a different User ID (e.g., `Bob`), and click **Join Room**.
 4. Both tabs will log `joined` state and list the other user in the "Room Directory".
-5. Use the **Manual Signal Testing** box to send mock `Offer`, `Answer`, and `ICE` parameters, and observe the live color-coded JSON logs arriving in real-time in the other peer's terminal log!
+5. In **Tab 1**, select **Bob** from the **Target Peer to Call** dropdown in the *3. Live 1:1 Audio Call* card and click **Start Audio Call**.
+6. **Tab 2** will immediately ring, prompting an incoming call notification card from `Alice`.
+7. Click **Accept** in Tab 2 to grant microphone permissions (`getUserMedia`) and establish a real WebRTC peer-to-peer audio connection!
+8. Track the real-time WebRTC PC Connection State, ICE Connection State, and Signaling State directly from the status card.
+9. Use the **Mute Mic** toggle to silence your audio locally, or click **End Call** on either device to gracefully close the RTCPeerConnection and release media tracks.
+10. **Testing on Local WiFi**: Open `http://<your-machine-ip>:3000/test.html` on two different devices (e.g., your laptop and phone) connected to the same WiFi network to test real WebRTC traversal across different physical devices! The ICE configuration dynamically maps CoTurn stun/turn configurations to your host IP automatically.
 
 ---
 
@@ -119,7 +124,29 @@ Used by peers during the WebRTC handshake. If a `targetId` is specified, the mes
 }
 ```
 
-### 5. Leave Room / Disconnect
+### 5. Call Control & Rejections (`call-decline`, `hangup`)
+Used to coordinate call-level permissions before WebRTC peer-connection handshakes occur.
+
+#### Call Decline / Busy Reject
+```json
+{
+  "type": "call-decline",
+  "roomId": "test-room",
+  "targetId": "peer-alice",
+  "reason": "declined" // or "busy"
+}
+```
+
+#### Hangup / Close Connection
+```json
+{
+  "type": "hangup",
+  "roomId": "test-room",
+  "targetId": "peer-bob"
+}
+```
+
+### 6. Leave Room / Disconnect
 Sent by a client to clean up state or when the socket closes.
 ```json
 {

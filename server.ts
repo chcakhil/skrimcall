@@ -99,7 +99,9 @@ async function startServer() {
 
           case "offer":
           case "answer":
-          case "ice-candidate": {
+          case "ice-candidate":
+          case "call-decline":
+          case "hangup": {
             const clientMeta = clients.get(ws);
             if (!clientMeta) {
               ws.send(

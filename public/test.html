@@ -20,6 +20,8 @@
     </style>
   </head>
   <body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col antialiased">
+    <!-- Playback for 1:1 Live Audio -->
+    <audio id="remote-audio" autoplay></audio>
     <!-- Header -->
     <header class="border-b border-slate-800 bg-slate-900/50 backdrop-blur px-6 py-4 flex items-center justify-between">
       <div class="flex items-center space-x-3">
@@ -64,14 +66,76 @@
         </div>
 
         <!-- Room Directory Card -->
-        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg flex-1 flex flex-col">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col">
           <h2 class="text-sm font-medium uppercase tracking-wider text-slate-400 mb-2">Room Directory</h2>
           <p class="text-xs text-slate-500 mb-4">Other peers currently in your room:</p>
           
-          <div class="flex-1 bg-slate-950 border border-slate-800/80 rounded-lg p-3 overflow-y-auto max-h-[160px] lg:max-h-none">
+          <div class="bg-slate-950 border border-slate-800/80 rounded-lg p-3 overflow-y-auto max-h-[120px]">
             <ul id="members-list" class="space-y-2 text-sm">
               <li class="text-slate-500 italic text-xs py-1">Not in any room</li>
             </ul>
+          </div>
+        </div>
+
+        <!-- Real-Time 1:1 Audio Call Card -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-medium uppercase tracking-wider text-slate-400">3. Live 1:1 Audio Call</h2>
+            <span id="call-state" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-950 text-slate-400 font-bold uppercase">
+              IDLE
+            </span>
+          </div>
+          
+          <p class="text-xs text-slate-500">
+            Activate microphone and start high-fidelity 1:1 calling.
+          </p>
+
+          <div class="space-y-3">
+            <!-- Peer Caller Target -->
+            <div>
+              <label for="call-target-id" class="block text-xs font-medium text-slate-400 mb-1">Target Peer to Call</label>
+              <select id="call-target-id" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono">
+                <option value="">[Select peer from list]</option>
+              </select>
+            </div>
+
+            <!-- Call Controls -->
+            <div id="call-init-controls" class="grid grid-cols-1 gap-2">
+              <button onclick="startCall()" id="btn-start-call" disabled class="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+                <span>Start Audio Call</span>
+              </button>
+            </div>
+
+            <!-- Incoming Call Request Controls -->
+            <div id="incoming-call-controls" class="hidden bg-slate-950 border border-slate-800 rounded-lg p-3 space-y-2.5 animate-pulse">
+              <p class="text-xs text-sky-400 font-mono text-center" id="incoming-caller-text">Incoming call...</p>
+              <div class="grid grid-cols-2 gap-2">
+                <button onclick="acceptCall()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2 rounded-md transition-all cursor-pointer">
+                  Accept
+                </button>
+                <button onclick="declineCall()" class="bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold py-2 rounded-md transition-all cursor-pointer">
+                  Decline
+                </button>
+              </div>
+            </div>
+
+            <!-- Active Call Controls -->
+            <div id="active-call-controls" class="hidden grid grid-cols-2 gap-2">
+              <button onclick="toggleMute()" id="btn-mute" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium py-2 rounded-lg transition-all cursor-pointer">
+                Mute Mic
+              </button>
+              <button onclick="endCall()" class="bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium py-2 rounded-lg transition-all cursor-pointer">
+                End Call
+              </button>
+            </div>
+
+            <!-- Connection Status Logs for WebRTC PeerConnection -->
+            <div class="bg-slate-950 border border-slate-800/80 rounded-lg p-3 space-y-1.5 font-mono text-[10px] text-slate-400">
+              <div class="flex justify-between"><span>WebRTC PC State:</span><span id="webrtc-conn-state" class="text-slate-500 font-bold">NULL</span></div>
+              <div class="flex justify-between"><span>ICE Connection:</span><span id="webrtc-ice-state" class="text-slate-500 font-bold">NULL</span></div>
+              <div class="flex justify-between"><span>Signaling State:</span><span id="webrtc-signal-state" class="text-slate-500 font-bold">NULL</span></div>
+            </div>
           </div>
         </div>
 
@@ -133,6 +197,34 @@
       let currentRoomId = null;
       let currentUserId = null;
       let roomMembers = [];
+
+      // WebRTC Live Call Session Variables
+      let localStream = null;
+      let peerConnection = null;
+      let isCaller = false;
+      let currentCallPeer = null;
+      let callState = 'idle'; // idle, requesting-mic, calling, ringing, connected, ended
+      let isMuted = false;
+      let pendingOffer = null;
+
+      // Extract the local/remote IP or hostname of the machine to allow Multi-Device WiFi testing automatically!
+      const currentHost = window.location.hostname || '127.0.0.1';
+      const iceConfiguration = {
+        iceServers: [
+          {
+            urls: 'stun:stun.l.google.com:19302'
+          },
+          {
+            urls: `stun:${currentHost}:3478`
+          },
+          {
+            urls: `turn:${currentHost}:3478`,
+            username: 'skrimuser',
+            credential: 'skrimpassword'
+          }
+        ],
+        iceTransportPolicy: 'all'
+      };
 
       // Auto-generate userId on load
       window.onload = () => {
@@ -260,6 +352,25 @@
           } else if (payload.type === 'user-left') {
             roomMembers = roomMembers.filter(id => id !== payload.userId);
             updateMembersUI();
+
+            // If calling peer disconnected, hang up WebRTC call
+            if (currentCallPeer === payload.userId) {
+              logMessage('sys', `Calling peer "${payload.userId}" has disconnected from the room.`);
+              resetCallState();
+            }
+          }
+          
+          // WebRTC signaling and call control routers
+          else if (payload.type === 'offer') {
+            handleIncomingOffer(payload);
+          } else if (payload.type === 'answer') {
+            handleIncomingAnswer(payload);
+          } else if (payload.type === 'ice-candidate') {
+            handleIncomingIce(payload);
+          } else if (payload.type === 'call-decline') {
+            handleIncomingDecline(payload);
+          } else if (payload.type === 'hangup') {
+            handleIncomingHangup(payload);
           }
         };
 
@@ -307,23 +418,36 @@
 
         document.getElementById('sess-info').textContent = 'none';
 
+        resetCallState();
         updateMembersUI();
       }
 
       function updateMembersUI() {
         const list = document.getElementById('members-list');
         const select = document.getElementById('target-id');
+        const callSelect = document.getElementById('call-target-id');
         
-        // Save current selection
+        // Save current selections
         const prevSelected = select.value;
+        const prevCallSelected = callSelect ? callSelect.value : '';
 
         // Clear UI
         list.innerHTML = '';
         select.innerHTML = '<option value="">[Broadcast to All]</option>';
+        if (callSelect) {
+          callSelect.innerHTML = '<option value="">[Select peer from list]</option>';
+        }
 
         if (roomMembers.length === 0) {
           list.innerHTML = '<li class="text-slate-500 italic text-xs py-1">No other active peers</li>';
+          if (document.getElementById('btn-start-call')) {
+            document.getElementById('btn-start-call').disabled = true;
+          }
           return;
+        }
+
+        if (document.getElementById('btn-start-call')) {
+          document.getElementById('btn-start-call').disabled = false;
         }
 
         roomMembers.forEach(memberId => {
@@ -344,6 +468,17 @@
             option.selected = true;
           }
           select.appendChild(option);
+
+          // Call Target Option
+          if (callSelect) {
+            const callOption = document.createElement('option');
+            callOption.value = memberId;
+            callOption.textContent = memberId;
+            if (memberId === prevCallSelected) {
+              callOption.selected = true;
+            }
+            callSelect.appendChild(callOption);
+          }
         });
       }
 
@@ -383,6 +518,374 @@
 
         ws.send(JSON.stringify(payload));
         logMessage('out', payload);
+      }
+
+      // --- LIVE 1:1 WEBRTC AUDIO CALL IMPLEMENTATION ---
+
+      function updateCallState(newState) {
+        callState = newState;
+        const callStateBadge = document.getElementById('call-state');
+        if (!callStateBadge) return;
+        
+        callStateBadge.textContent = newState.toUpperCase();
+        
+        if (newState === 'idle') {
+          callStateBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-950 text-slate-400 font-bold uppercase';
+        } else if (newState === 'requesting-mic') {
+          callStateBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-950 text-amber-400 font-bold uppercase animate-pulse border border-amber-900/30';
+        } else if (newState === 'calling') {
+          callStateBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-950 text-sky-400 font-bold uppercase animate-pulse border border-sky-900/30';
+        } else if (newState === 'ringing') {
+          callStateBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-950 text-purple-400 font-bold uppercase animate-bounce border border-purple-900/30';
+        } else if (newState === 'connected') {
+          callStateBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 font-bold uppercase border border-emerald-900/40';
+        } else if (newState === 'ended') {
+          callStateBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-950 text-rose-400 font-bold uppercase';
+        }
+
+        const initBox = document.getElementById('call-init-controls');
+        const incomingBox = document.getElementById('incoming-call-controls');
+        const activeBox = document.getElementById('active-call-controls');
+
+        if (newState === 'ringing') {
+          initBox.classList.add('hidden');
+          incomingBox.classList.remove('hidden');
+          activeBox.classList.add('hidden');
+        } else if (newState === 'calling' || newState === 'connected') {
+          initBox.classList.add('hidden');
+          incomingBox.classList.add('hidden');
+          activeBox.classList.remove('hidden');
+        } else {
+          initBox.classList.remove('hidden');
+          incomingBox.classList.add('hidden');
+          activeBox.classList.add('hidden');
+        }
+      }
+
+      async function getLocalAudioStream() {
+        if (localStream) return localStream;
+        updateCallState('requesting-mic');
+        try {
+          logMessage('sys', 'Acquiring microphone audio stream with getUserMedia...');
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          localStream = stream;
+          logMessage('sys', 'Microphone audio capture activated successfully.');
+          return stream;
+        } catch (e) {
+          logMessage('sys', `Microphone acquisition error: ${e.message}`);
+          updateCallState('idle');
+          throw e;
+        }
+      }
+
+      async function startCall() {
+        const targetSelect = document.getElementById('call-target-id');
+        const peerId = targetSelect.value;
+        if (!peerId) {
+          alert('Please select a target peer from the list to call.');
+          return;
+        }
+
+        isCaller = true;
+        currentCallPeer = peerId;
+        updateCallState('calling');
+
+        try {
+          const stream = await getLocalAudioStream();
+          createPeerConnection(peerId);
+
+          // Attach local tracks to the connection
+          stream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, stream);
+          });
+
+          logMessage('sys', `Constructing WebRTC SDP Offer to send to "${peerId}".`);
+          const offer = await peerConnection.createOffer();
+          await peerConnection.setLocalDescription(offer);
+
+          const offerPayload = {
+            type: 'offer',
+            roomId: currentRoomId,
+            targetId: peerId,
+            sdp: peerConnection.localDescription
+          };
+          ws.send(JSON.stringify(offerPayload));
+          logMessage('out', offerPayload);
+        } catch (err) {
+          logMessage('sys', `Failed to initiate audio call: ${err.message}`);
+          endCall();
+        }
+      }
+
+      function createPeerConnection(peerId) {
+        logMessage('sys', `Initializing RTCPeerConnection...`);
+        peerConnection = new RTCPeerConnection(iceConfiguration);
+
+        // Share ICE Candidates
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            const candidatePayload = {
+              type: 'ice-candidate',
+              roomId: currentRoomId,
+              targetId: peerId,
+              candidate: event.candidate
+            };
+            ws.send(JSON.stringify(candidatePayload));
+            logMessage('out', { type: 'ice-candidate', targetId: peerId });
+          }
+        };
+
+        // Track state updates
+        peerConnection.onconnectionstatechange = () => {
+          const state = peerConnection.connectionState;
+          const pcStateEl = document.getElementById('webrtc-conn-state');
+          if (pcStateEl) {
+            pcStateEl.textContent = state.toUpperCase();
+            if (state === 'connected') {
+              pcStateEl.className = 'text-emerald-400 font-bold';
+              updateCallState('connected');
+            } else if (state === 'connecting') {
+              pcStateEl.className = 'text-sky-400 font-bold';
+            } else if (state === 'failed') {
+              pcStateEl.className = 'text-rose-500 font-bold';
+              logMessage('sys', 'WebRTC connection failed. Tearing down.');
+              resetCallState();
+            } else if (state === 'closed' || state === 'disconnected') {
+              pcStateEl.className = 'text-slate-500 font-bold';
+            }
+          }
+          logMessage('sys', `WebRTC RTCPeerConnection connectionState is: "${state}"`);
+        };
+
+        peerConnection.oniceconnectionstatechange = () => {
+          const state = peerConnection.iceConnectionState;
+          const iceStateEl = document.getElementById('webrtc-ice-state');
+          if (iceStateEl) {
+            iceStateEl.textContent = state.toUpperCase();
+            if (state === 'connected' || state === 'completed') {
+              iceStateEl.className = 'text-emerald-400 font-bold';
+            } else if (state === 'checking') {
+              iceStateEl.className = 'text-amber-400 font-bold';
+            } else {
+              iceStateEl.className = 'text-slate-500 font-bold';
+            }
+          }
+          logMessage('sys', `WebRTC ICE ConnectionState: "${state}"`);
+        };
+
+        peerConnection.onsignalingstatechange = () => {
+          const state = peerConnection.signalingState;
+          const sigStateEl = document.getElementById('webrtc-signal-state');
+          if (sigStateEl) {
+            sigStateEl.textContent = state.toUpperCase();
+            if (state === 'stable') {
+              sigStateEl.className = 'text-emerald-400 font-bold';
+            } else {
+              sigStateEl.className = 'text-amber-400 font-bold';
+            }
+          }
+        };
+
+        // Process incoming tracks
+        peerConnection.ontrack = (event) => {
+          logMessage('sys', 'Remote audio stream track received!');
+          const remoteAudio = document.getElementById('remote-audio');
+          if (remoteAudio) {
+            if (remoteAudio.srcObject !== event.streams[0]) {
+              remoteAudio.srcObject = event.streams[0];
+              logMessage('sys', 'Linked remote media track to HTML audio element.');
+            }
+          }
+        };
+      }
+
+      function handleIncomingOffer(payload) {
+        if (callState !== 'idle' && callState !== 'ended') {
+          logMessage('sys', `Busy. Declining incoming call offer from peer "${payload.senderId}".`);
+          const busyPayload = {
+            type: 'call-decline',
+            roomId: currentRoomId,
+            targetId: payload.senderId,
+            reason: 'busy'
+          };
+          ws.send(JSON.stringify(busyPayload));
+          logMessage('out', busyPayload);
+          return;
+        }
+
+        logMessage('sys', `Incoming Call request detected from "${payload.senderId}".`);
+        currentCallPeer = payload.senderId;
+        pendingOffer = payload.sdp;
+
+        document.getElementById('incoming-caller-text').textContent = `Incoming call from "${payload.senderId}"`;
+        updateCallState('ringing');
+      }
+
+      async function acceptCall() {
+        if (!pendingOffer || !currentCallPeer) return;
+
+        logMessage('sys', `Answering call request from "${currentCallPeer}"`);
+        updateCallState('calling');
+
+        try {
+          const stream = await getLocalAudioStream();
+          createPeerConnection(currentCallPeer);
+
+          // Add media tracks
+          stream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, stream);
+          });
+
+          logMessage('sys', `Accepting caller's SDP configurations.`);
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(pendingOffer));
+
+          logMessage('sys', 'Constructing SDP Answer...');
+          const answer = await peerConnection.createAnswer();
+          await peerConnection.setLocalDescription(answer);
+
+          const answerPayload = {
+            type: 'answer',
+            roomId: currentRoomId,
+            targetId: currentCallPeer,
+            sdp: peerConnection.localDescription
+          };
+          ws.send(JSON.stringify(answerPayload));
+          logMessage('out', answerPayload);
+
+          pendingOffer = null;
+        } catch (err) {
+          logMessage('sys', `Failed to answer call: ${err.message}`);
+          endCall();
+        }
+      }
+
+      function declineCall() {
+        if (currentCallPeer) {
+          logMessage('sys', `Declining incoming call request.`);
+          const declinePayload = {
+            type: 'call-decline',
+            roomId: currentRoomId,
+            targetId: currentCallPeer,
+            reason: 'declined'
+          };
+          ws.send(JSON.stringify(declinePayload));
+          logMessage('out', declinePayload);
+        }
+        resetCallState();
+      }
+
+      async function handleIncomingAnswer(payload) {
+        if (peerConnection && currentCallPeer === payload.senderId) {
+          logMessage('sys', `SDP Answer from ${payload.senderId} received. Setting remote description.`);
+          try {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+            logMessage('sys', 'Remote SDP session applied successfully. Setting up audio channels.');
+          } catch (e) {
+            logMessage('sys', `Failed to apply SDP answer description: ${e.message}`);
+          }
+        }
+      }
+
+      async function handleIncomingIce(payload) {
+        if (peerConnection && currentCallPeer === payload.senderId) {
+          try {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(payload.candidate));
+            logMessage('sys', `ICE candidate applied from ${payload.senderId}`);
+          } catch (e) {
+            // Suppress minor ICE candidates warnings
+          }
+        }
+      }
+
+      function handleIncomingDecline(payload) {
+        if (currentCallPeer === payload.senderId) {
+          logMessage('sys', `Call declined by ${payload.senderId} (${payload.reason || 'declined'}).`);
+          resetCallState();
+        }
+      }
+
+      function handleIncomingHangup(payload) {
+        if (currentCallPeer === payload.senderId) {
+          logMessage('sys', `Call hung up by peer "${payload.senderId}".`);
+          resetCallState();
+        }
+      }
+
+      function toggleMute() {
+        if (!localStream) return;
+        const audioTrack = localStream.getAudioTracks()[0];
+        if (audioTrack) {
+          audioTrack.enabled = !audioTrack.enabled;
+          isMuted = !audioTrack.enabled;
+
+          const muteBtn = document.getElementById('btn-mute');
+          if (isMuted) {
+            muteBtn.textContent = 'Unmute Mic';
+            muteBtn.className = 'bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium py-2 rounded-lg transition-all cursor-pointer';
+            logMessage('sys', 'Microphone muted locally.');
+          } else {
+            muteBtn.textContent = 'Mute Mic';
+            muteBtn.className = 'bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium py-2 rounded-lg transition-all cursor-pointer';
+            logMessage('sys', 'Microphone unmuted locally.');
+          }
+        }
+      }
+
+      function endCall() {
+        if (currentCallPeer) {
+          logMessage('sys', `Sending hangup signal to "${currentCallPeer}".`);
+          const hangupPayload = {
+            type: 'hangup',
+            roomId: currentRoomId,
+            targetId: currentCallPeer
+          };
+          try {
+            ws.send(JSON.stringify(hangupPayload));
+            logMessage('out', hangupPayload);
+          } catch(e) {}
+        }
+        resetCallState();
+      }
+
+      function resetCallState() {
+        logMessage('sys', 'Closing active WebRTC media call and tracks.');
+
+        if (peerConnection) {
+          peerConnection.close();
+          peerConnection = null;
+        }
+
+        if (localStream) {
+          localStream.getTracks().forEach(track => track.stop());
+          localStream = null;
+        }
+
+        const remoteAudio = document.getElementById('remote-audio');
+        if (remoteAudio) {
+          remoteAudio.srcObject = null;
+        }
+
+        currentCallPeer = null;
+        pendingOffer = null;
+        isCaller = false;
+        isMuted = false;
+
+        const muteBtn = document.getElementById('btn-mute');
+        if (muteBtn) {
+          muteBtn.textContent = 'Mute Mic';
+          muteBtn.className = 'bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium py-2 rounded-lg transition-all cursor-pointer';
+        }
+
+        const pcStateEl = document.getElementById('webrtc-conn-state');
+        if (pcStateEl) pcStateEl.textContent = 'NULL';
+
+        const iceStateEl = document.getElementById('webrtc-ice-state');
+        if (iceStateEl) iceStateEl.textContent = 'NULL';
+
+        const sigStateEl = document.getElementById('webrtc-signal-state');
+        if (sigStateEl) sigStateEl.textContent = 'NULL';
+
+        updateCallState('idle');
       }
     </script>
   </body>
