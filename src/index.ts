@@ -7,16 +7,40 @@
  */
 
 // ----------------------------------------------------------------------------
-// 1. CRYPTO MODULE [STATUS: DONE / ACTIVE]
+// 1. CRYPTO MODULE [STATUS: ACTIVE]
 // ----------------------------------------------------------------------------
 export {
   generateKeyPair,
-  encryptMessage,
-  decryptMessage,
   ensureReady,
 } from './lib/crypto/box';
 
 export type { KeyPair } from './lib/crypto/box';
+
+export {
+  initSecureSession,
+  encryptMessage,
+  decryptMessage,
+} from './lib/crypto/session';
+
+export type {
+  SessionConfig,
+  InitiatorConfig,
+  ResponderConfig,
+} from './lib/crypto/session';
+
+export type {
+  RatchetState,
+  EncryptedMessage,
+} from './lib/crypto/doubleRatchet';
+
+export {
+  aliceX3DH,
+  bobX3DH,
+} from './lib/crypto/keyExchange';
+
+export type {
+  BobPrekeyBundle,
+} from './lib/crypto/keyExchange';
 
 // ----------------------------------------------------------------------------
 // 2. SIGNALING MODULE [STATUS: PLANNED - COMING IN PHASE 2]

@@ -24,7 +24,7 @@ import {
   Search,
   BookOpen,
 } from "lucide-react";
-import { generateKeyPair, encryptMessage, decryptMessage, ensureReady } from "./index";
+import { generateKeyPair, encryptMessage, decryptMessage, ensureReady } from "./lib/crypto/box";
 
 interface LogEntry {
   id: string;
