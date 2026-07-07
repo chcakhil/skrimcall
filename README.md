@@ -209,3 +209,46 @@ const peerConnection = new RTCPeerConnection(configuration);
 ```bash
 docker-compose down
 ```
+
+---
+
+## 📹 Phase 3: Live 1:1 Video Calling & Dynamic Fallbacks Addendum
+
+The theater of operations has been upgraded with complete video streaming support (`getUserMedia` audio + video tracks), camera hardware switching, and dynamic bandwidth-quality adaptation.
+
+### 1. Dual-Track Media Stream Acquisition
+When starting or accepting a call, `getUserMedia({ audio: true, video: true })` requests both inputs. If permission is granted:
+- The local selfie feed is rendered with a natural mirror-view transform (`scaleX(-1)`) and programmatically muted to avoid recursive microphone acoustic feedback loops.
+- Camera hardware devices are queried dynamically using `navigator.mediaDevices.enumerateDevices()`.
+
+### 2. Multi-Camera / Switch Camera Support
+If multiple video-capture sources are found (e.g. integrated webcam + external USB webcam, or front + back cameras on mobile phones):
+- An **Active Camera Device** drop-down selector is populated.
+- When changed, the client captures the new device's track and seamlessly calls `videoSender.replaceTrack()` on the active WebRTC connection, allowing camera changes in real-time without session drops or signaling negotiations!
+
+### 3. Graceful Bandwidth & Quality Fallback
+To keep calls stable over weak network topologies:
+- An automated connection health monitor runs every 3 seconds while the connection state is `connected`.
+- It evaluates the receiver's packets and round-trip times via `RTCPeerConnection.getStats()`.
+- If packet loss exceeds **20%** or network latency (RTT) spikes above **800ms**, the client gracefully demotes the call to **Audio-Only**:
+  - The local video track `enabled` property is flipped to `false` to conserve bandwidth.
+  - A beautiful, non-obtrusive **Network Quality Degraded** warning overlay is presented on the video boxes, letting both peers continue their call smoothly via high-fidelity audio without freezing the pipeline.
+
+### 4. Step-by-Step Testing Guide
+
+#### Scenario A: Two Local Tabs (Single Machine)
+1. Open two browser tabs side-by-side to `http://localhost:3000/test.html`.
+2. Connect both tabs to the same Room ID (e.g., `skrim-video-room`).
+3. Click **Start Video Call** in Tab 1. Tab 2 will ring instantly.
+4. Click **Accept** in Tab 2.
+5. Watch as the local video displays your webcam mirrored on the left and the other peer's camera feed on the right!
+6. Click **Mute Mic** to silence audio, select a different webcam from the dropdown, or click **End Call** to gracefully close all active tracks.
+
+#### Scenario B: Two Real Devices on LAN (e.g., Laptop & Phone)
+1. Ensure both devices are connected to the same Local Area Network (WiFi).
+2. Find the local LAN IP address of your host machine (e.g. `192.168.1.100`).
+3. Open `http://<your-machine-ip>:3000/test.html` on both your Laptop and Phone.
+4. Join the same Room ID on both devices.
+5. Click **Start Video Call** from one of the devices.
+6. Click **Accept** on the other device and grant microphone/camera permissions.
+7. Observe true cross-device peer-to-peer audio and video stream delivery across physical hardware! If using your phone, use the **Active Camera Device** switcher to swap between front selfie-views and back main cameras.

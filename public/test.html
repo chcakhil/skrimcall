@@ -77,18 +77,43 @@
           </div>
         </div>
 
-        <!-- Real-Time 1:1 Audio Call Card -->
+        <!-- Real-Time 1:1 Video & Audio Call Card -->
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
           <div class="flex items-center justify-between">
-            <h2 class="text-sm font-medium uppercase tracking-wider text-slate-400">3. Live 1:1 Audio Call</h2>
+            <h2 class="text-sm font-medium uppercase tracking-wider text-slate-400">3. Live 1:1 Video & Audio Call</h2>
             <span id="call-state" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-950 text-slate-400 font-bold uppercase">
               IDLE
             </span>
           </div>
           
           <p class="text-xs text-slate-500">
-            Activate microphone and start high-fidelity 1:1 calling.
+            Activate microphone & camera and start high-fidelity 1:1 video calling.
           </p>
+
+          <!-- Live Video Displays -->
+          <div class="relative bg-slate-950 border border-slate-800/80 rounded-lg p-2 overflow-hidden">
+            <div class="grid grid-cols-2 gap-2 h-40 relative">
+              <!-- Local Video Container -->
+              <div class="relative bg-slate-900 rounded-md overflow-hidden flex items-center justify-center border border-slate-800/50">
+                <video id="local-video" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100"></video>
+                <span class="absolute bottom-1.5 left-1.5 text-[9px] bg-slate-950/80 px-1.5 py-0.5 rounded text-slate-300 font-mono border border-slate-800/40">Local (Self)</span>
+              </div>
+              <!-- Remote Video Container -->
+              <div class="relative bg-slate-900 rounded-md overflow-hidden flex items-center justify-center border border-slate-800/50">
+                <video id="remote-video" autoplay playsinline class="w-full h-full object-cover"></video>
+                <span class="absolute bottom-1.5 left-1.5 text-[9px] bg-slate-950/80 px-1.5 py-0.5 rounded text-slate-300 font-mono border border-slate-800/40">Remote</span>
+              </div>
+
+              <!-- Quality / Bandwidth Fallback Msg Overlay -->
+              <div id="video-fallback-msg" class="hidden absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center text-center p-3 z-10 rounded-md border border-amber-500/20">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-amber-500 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <p class="text-[11px] font-semibold text-slate-200">Network Quality Degraded</p>
+                <p class="text-[9px] text-slate-400 mt-0.5 max-w-[200px]">Switched to Audio-Only mode to protect active call stream.</p>
+              </div>
+            </div>
+          </div>
 
           <div class="space-y-3">
             <!-- Peer Caller Target -->
@@ -99,11 +124,19 @@
               </select>
             </div>
 
+            <!-- Switch Camera Control (Hidden until devices list is enumerated) -->
+            <div id="camera-selector-container" class="hidden">
+              <label for="camera-select" class="block text-xs font-medium text-slate-400 mb-1">Active Camera Device</label>
+              <select id="camera-select" onchange="switchCamera()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono">
+                <option value="">[Detecting cameras...]</option>
+              </select>
+            </div>
+
             <!-- Call Controls -->
             <div id="call-init-controls" class="grid grid-cols-1 gap-2">
               <button onclick="startCall()" id="btn-start-call" disabled class="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-2">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
-                <span>Start Audio Call</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                <span>Start Video Call</span>
               </button>
             </div>
 
@@ -206,6 +239,13 @@
       let callState = 'idle'; // idle, requesting-mic, calling, ringing, connected, ended
       let isMuted = false;
       let pendingOffer = null;
+
+      // Camera selector and Stats variables
+      let currentVideoDeviceId = null;
+      let statsInterval = null;
+      let lastPacketsReceived = 0;
+      let lastPacketsLost = 0;
+      let isFallbackAudioOnly = false;
 
       // Extract the local/remote IP or hostname of the machine to allow Multi-Device WiFi testing automatically!
       const currentHost = window.location.hostname || '127.0.0.1';
@@ -562,19 +602,203 @@
         }
       }
 
-      async function getLocalAudioStream() {
+      async function getLocalStream() {
         if (localStream) return localStream;
         updateCallState('requesting-mic');
         try {
-          logMessage('sys', 'Acquiring microphone audio stream with getUserMedia...');
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          logMessage('sys', 'Acquiring microphone and camera stream with getUserMedia...');
+          
+          const constraints = {
+            audio: true,
+            video: currentVideoDeviceId ? { deviceId: { exact: currentVideoDeviceId } } : true
+          };
+
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
           localStream = stream;
-          logMessage('sys', 'Microphone audio capture activated successfully.');
+          logMessage('sys', 'Microphone and camera capture activated successfully.');
+
+          // Set local video element srcObject
+          const localVideo = document.getElementById('local-video');
+          if (localVideo) {
+            localVideo.srcObject = stream;
+          }
+
+          // Enumerate available cameras
+          await enumerateCameras();
+
           return stream;
         } catch (e) {
-          logMessage('sys', `Microphone acquisition error: ${e.message}`);
+          logMessage('sys', `Microphone/Camera acquisition error: ${e.message}`);
           updateCallState('idle');
           throw e;
+        }
+      }
+
+      async function enumerateCameras() {
+        const cameraSelect = document.getElementById('camera-select');
+        const container = document.getElementById('camera-selector-container');
+        if (!cameraSelect) return;
+
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = devices.filter(device => device.kind === 'videoinput');
+          
+          cameraSelect.innerHTML = '';
+          
+          if (videoDevices.length > 1) {
+            videoDevices.forEach((device, index) => {
+              const option = document.createElement('option');
+              option.value = device.deviceId;
+              option.textContent = device.label || `Camera ${index + 1}`;
+              if (device.deviceId === currentVideoDeviceId) {
+                option.selected = true;
+              }
+              cameraSelect.appendChild(option);
+            });
+            container.classList.remove('hidden');
+            logMessage('sys', `Enumerated ${videoDevices.length} camera(s) successfully.`);
+          } else if (videoDevices.length === 1) {
+            const option = document.createElement('option');
+            option.value = videoDevices[0].deviceId;
+            option.textContent = videoDevices[0].label || 'Default Camera';
+            cameraSelect.appendChild(option);
+            container.classList.add('hidden'); // hidden for 1 camera
+          } else {
+            container.classList.add('hidden');
+          }
+        } catch (e) {
+          logMessage('sys', `Error enumerating video devices: ${e.message}`);
+        }
+      }
+
+      async function switchCamera() {
+        const cameraSelect = document.getElementById('camera-select');
+        if (!cameraSelect) return;
+        const deviceId = cameraSelect.value;
+        if (deviceId === currentVideoDeviceId) return;
+
+        logMessage('sys', `Switching camera source to: "${deviceId}"`);
+        currentVideoDeviceId = deviceId;
+
+        if (!localStream) return;
+
+        try {
+          const newStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: { deviceId: { exact: deviceId } }
+          });
+
+          const newVideoTrack = newStream.getVideoTracks()[0];
+          const oldVideoTrack = localStream.getVideoTracks()[0];
+
+          // Set source on UI
+          const localVideo = document.getElementById('local-video');
+          if (localVideo) {
+            localVideo.srcObject = newStream;
+          }
+
+          // Replace track in active WebRTC peer connection
+          if (peerConnection) {
+            const senders = peerConnection.getSenders();
+            const videoSender = senders.find(sender => sender.track && sender.track.kind === 'video');
+            if (videoSender && newVideoTrack) {
+              logMessage('sys', 'Replacing active WebRTC peer video track with selected camera.');
+              await videoSender.replaceTrack(newVideoTrack);
+            }
+          }
+
+          // Stop old stream
+          localStream.getTracks().forEach(track => track.stop());
+          localStream = newStream;
+          logMessage('sys', 'Camera switched successfully.');
+        } catch (err) {
+          logMessage('sys', `Failed to switch camera: ${err.message}`);
+        }
+      }
+
+      // WebRTC connection performance / fallback monitoring
+      function startStatsMonitoring() {
+        if (statsInterval) clearInterval(statsInterval);
+        lastPacketsReceived = 0;
+        lastPacketsLost = 0;
+        isFallbackAudioOnly = false;
+
+        statsInterval = setInterval(async () => {
+          if (!peerConnection || peerConnection.connectionState !== 'connected') return;
+
+          try {
+            const stats = await peerConnection.getStats();
+            let inboundVideoStats = null;
+            let activeCandidatePair = null;
+
+            stats.forEach(report => {
+              if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
+                inboundVideoStats = report;
+              }
+              if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                activeCandidatePair = report;
+              }
+            });
+
+            if (inboundVideoStats) {
+              const currentLost = inboundVideoStats.packetsLost || 0;
+              const currentReceived = inboundVideoStats.packetsReceived || 0;
+
+              const deltaLost = currentLost - lastPacketsLost;
+              const deltaReceived = currentReceived - lastPacketsReceived;
+              const totalDelta = deltaLost + deltaReceived;
+
+              if (totalDelta > 20) {
+                const lossRatio = deltaLost / totalDelta;
+                logMessage('sys', `[Stats Monitor] Video Packet Loss: ${(lossRatio * 100).toFixed(1)}%`);
+                
+                if (lossRatio > 0.20 && !isFallbackAudioOnly) {
+                  triggerAudioOnlyFallback('high packet loss (>20%)');
+                }
+              }
+
+              lastPacketsLost = currentLost;
+              lastPacketsReceived = currentReceived;
+            }
+
+            if (activeCandidatePair && activeCandidatePair.currentRoundTripTime) {
+              const rtt = activeCandidatePair.currentRoundTripTime * 1000;
+              logMessage('sys', `[Stats Monitor] Network RTT: ${rtt.toFixed(0)}ms`);
+              if (rtt > 800 && !isFallbackAudioOnly) {
+                triggerAudioOnlyFallback('high network latency (>800ms)');
+              }
+            }
+
+          } catch (e) {
+            // Stats not ready
+          }
+        }, 3000);
+      }
+
+      function stopStatsMonitoring() {
+        if (statsInterval) {
+          clearInterval(statsInterval);
+          statsInterval = null;
+        }
+      }
+
+      function triggerAudioOnlyFallback(reason) {
+        if (isFallbackAudioOnly) return;
+        isFallbackAudioOnly = true;
+
+        logMessage('sys', `[QUALITY FALLBACK] Connection degraded due to ${reason}. Demoting to Audio-Only.`);
+
+        // Disable local video track
+        if (localStream) {
+          localStream.getVideoTracks().forEach(track => {
+            track.enabled = false;
+          });
+        }
+
+        // Show warning overlay
+        const fallbackMsg = document.getElementById('video-fallback-msg');
+        if (fallbackMsg) {
+          fallbackMsg.classList.remove('hidden');
         }
       }
 
@@ -591,7 +815,7 @@
         updateCallState('calling');
 
         try {
-          const stream = await getLocalAudioStream();
+          const stream = await getLocalStream();
           createPeerConnection(peerId);
 
           // Attach local tracks to the connection
@@ -612,7 +836,7 @@
           ws.send(JSON.stringify(offerPayload));
           logMessage('out', offerPayload);
         } catch (err) {
-          logMessage('sys', `Failed to initiate audio call: ${err.message}`);
+          logMessage('sys', `Failed to initiate call: ${err.message}`);
           endCall();
         }
       }
@@ -644,6 +868,8 @@
             if (state === 'connected') {
               pcStateEl.className = 'text-emerald-400 font-bold';
               updateCallState('connected');
+              // Activate automatic connection health monitoring
+              startStatsMonitoring();
             } else if (state === 'connecting') {
               pcStateEl.className = 'text-sky-400 font-bold';
             } else if (state === 'failed') {
@@ -652,6 +878,7 @@
               resetCallState();
             } else if (state === 'closed' || state === 'disconnected') {
               pcStateEl.className = 'text-slate-500 font-bold';
+              stopStatsMonitoring();
             }
           }
           logMessage('sys', `WebRTC RTCPeerConnection connectionState is: "${state}"`);
@@ -686,14 +913,14 @@
           }
         };
 
-        // Process incoming tracks
+        // Process incoming tracks (both audio and video)
         peerConnection.ontrack = (event) => {
-          logMessage('sys', 'Remote audio stream track received!');
-          const remoteAudio = document.getElementById('remote-audio');
-          if (remoteAudio) {
-            if (remoteAudio.srcObject !== event.streams[0]) {
-              remoteAudio.srcObject = event.streams[0];
-              logMessage('sys', 'Linked remote media track to HTML audio element.');
+          logMessage('sys', `Remote media track received: kind="${event.track.kind}"`);
+          const remoteVideo = document.getElementById('remote-video');
+          if (remoteVideo) {
+            if (remoteVideo.srcObject !== event.streams[0]) {
+              remoteVideo.srcObject = event.streams[0];
+              logMessage('sys', 'Linked remote media stream to HTML video element.');
             }
           }
         };
@@ -728,7 +955,7 @@
         updateCallState('calling');
 
         try {
-          const stream = await getLocalAudioStream();
+          const stream = await getLocalStream();
           createPeerConnection(currentCallPeer);
 
           // Add media tracks
@@ -850,6 +1077,9 @@
       function resetCallState() {
         logMessage('sys', 'Closing active WebRTC media call and tracks.');
 
+        // Stop connection statistics monitor
+        stopStatsMonitoring();
+
         if (peerConnection) {
           peerConnection.close();
           peerConnection = null;
@@ -860,15 +1090,39 @@
           localStream = null;
         }
 
+        // Clean video element states
+        const localVideo = document.getElementById('local-video');
+        if (localVideo) {
+          localVideo.srcObject = null;
+        }
+
+        const remoteVideo = document.getElementById('remote-video');
+        if (remoteVideo) {
+          remoteVideo.srcObject = null;
+        }
+
         const remoteAudio = document.getElementById('remote-audio');
         if (remoteAudio) {
           remoteAudio.srcObject = null;
+        }
+
+        // Hide quality fallback indicator
+        const fallbackMsg = document.getElementById('video-fallback-msg');
+        if (fallbackMsg) {
+          fallbackMsg.classList.add('hidden');
+        }
+
+        // Hide camera selector until next session
+        const cameraContainer = document.getElementById('camera-selector-container');
+        if (cameraContainer) {
+          cameraContainer.classList.add('hidden');
         }
 
         currentCallPeer = null;
         pendingOffer = null;
         isCaller = false;
         isMuted = false;
+        isFallbackAudioOnly = false;
 
         const muteBtn = document.getElementById('btn-mute');
         if (muteBtn) {
