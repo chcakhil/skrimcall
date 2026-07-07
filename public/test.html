@@ -172,6 +172,50 @@
           </div>
         </div>
 
+        <!-- Mediasoup SFU Group Video Call Card (3+ Participants) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-medium uppercase tracking-wider text-slate-400">4. Mediasoup SFU Group Calling</h2>
+            <span id="sfu-call-state" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-950 text-slate-500 font-bold uppercase">
+              DISCONNECTED
+            </span>
+          </div>
+          
+          <p class="text-xs text-slate-500">
+            Mediasoup-powered multi-user SFU room. Share your camera track and consume other peers' tracks in a dynamic real-time video grid.
+          </p>
+
+          <!-- Dynamic Video Grid for Mediasoup SFU -->
+          <div class="bg-slate-950 border border-slate-800/80 rounded-lg p-2.5 min-h-[160px] max-h-[300px] overflow-y-auto">
+            <div id="sfu-video-grid" class="grid grid-cols-2 gap-2">
+              <!-- Local Self Tile -->
+              <div id="sfu-local-tile" class="hidden relative bg-slate-900 rounded-md overflow-hidden aspect-video border border-slate-800/50">
+                <video id="sfu-local-video" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100"></video>
+                <span class="absolute bottom-1 right-1 text-[8px] bg-slate-950/80 px-1 py-0.5 rounded text-slate-300 font-mono">You (SFU)</span>
+              </div>
+              <!-- Empty state message -->
+              <div id="sfu-empty-grid-msg" class="col-span-2 text-center py-10 text-xs text-slate-500 italic">
+                Join Group SFU Call to publish and view video grid tiles
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="joinSFUCall()" id="btn-join-sfu" disabled class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold py-2.5 rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-1">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              <span>Join SFU Call</span>
+            </button>
+            <button onclick="leaveSFUCall()" id="btn-leave-sfu" disabled class="bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold py-2.5 rounded-lg transition-all cursor-pointer flex items-center justify-center space-x-1">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              <span>Leave SFU</span>
+            </button>
+          </div>
+        </div>
+
         <!-- WebRTC Test Signal Panel -->
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
           <h2 class="text-sm font-medium uppercase tracking-wider text-slate-400 mb-3">2. Manual Signal Testing</h2>
@@ -239,6 +283,14 @@
       let callState = 'idle'; // idle, requesting-mic, calling, ringing, connected, ended
       let isMuted = false;
       let pendingOffer = null;
+
+      // Mediasoup SFU State Trackers
+      let sfuConnected = false;
+      let sfuLocalStream = null;
+      let sfuSendTransportId = null;
+      let sfuProducers = new Map(); // producerId -> { kind, track }
+      let sfuConsumers = new Map(); // consumerId -> { pc, userId, kind, track }
+      let sfuSubConnections = new Map(); // consumerId -> RTCPeerConnection (tracks negotiate over this)
 
       // Camera selector and Stats variables
       let currentVideoDeviceId = null;
@@ -359,6 +411,12 @@
           document.getElementById('btn-answer').disabled = false;
           document.getElementById('btn-ice').disabled = false;
 
+          // Enable SFU Group Call Button
+          const btnJoinSFU = document.getElementById('btn-join-sfu');
+          if (btnJoinSFU) {
+            btnJoinSFU.disabled = false;
+          }
+
           currentRoomId = roomId;
           currentUserId = userId;
           document.getElementById('sess-info').textContent = `${userId} @ ${roomId}`;
@@ -412,6 +470,25 @@
           } else if (payload.type === 'hangup') {
             handleIncomingHangup(payload);
           }
+          
+          // Mediasoup SFU Signaling Router
+          else if (payload.type === 'sfu-router-rtp-capabilities') {
+            onSFURouterRtpCapabilities(payload);
+          } else if (payload.type === 'sfu-transport-created') {
+            onSFUTransportCreated(payload);
+          } else if (payload.type === 'sfu-transport-connected') {
+            onSFUTransportConnected(payload);
+          } else if (payload.type === 'sfu-produced') {
+            onSFUProduced(payload);
+          } else if (payload.type === 'sfu-consumed') {
+            onSFUConsumed(payload);
+          } else if (payload.type === 'sfu-new-producer') {
+            onSFUNewProducer(payload);
+          } else if (payload.type === 'sfu-producer-closed') {
+            onSFUProducerClosed(payload);
+          } else if (payload.type === 'sfu-negotiate') {
+            onSFUNegotiate(payload);
+          }
         };
 
         ws.onclose = () => {
@@ -458,6 +535,13 @@
 
         document.getElementById('sess-info').textContent = 'none';
 
+        // Reset SFU button states
+        const btnJoinSFU = document.getElementById('btn-join-sfu');
+        if (btnJoinSFU) btnJoinSFU.disabled = true;
+        const btnLeaveSFU = document.getElementById('btn-leave-sfu');
+        if (btnLeaveSFU) btnLeaveSFU.disabled = true;
+
+        leaveSFUCall();
         resetCallState();
         updateMembersUI();
       }
@@ -1140,6 +1224,398 @@
         if (sigStateEl) sigStateEl.textContent = 'NULL';
 
         updateCallState('idle');
+      }
+
+      // ==========================================
+      // MEDIASOUP SFU GROUP CALLING LOGIC
+      // ==========================================
+
+      async function joinSFUCall() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          logMessage('sys', 'Cannot join SFU Call: WebSocket is not connected.');
+          return;
+        }
+
+        logMessage('sys', 'Acquiring local camera & mic stream for Mediasoup SFU...');
+        try {
+          sfuLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+          
+          const localVideo = document.getElementById('sfu-local-video');
+          if (localVideo) {
+            localVideo.srcObject = sfuLocalStream;
+          }
+          
+          document.getElementById('sfu-local-tile').classList.remove('hidden');
+          document.getElementById('sfu-empty-grid-msg').classList.add('hidden');
+          
+          logMessage('sys', 'Local media acquired successfully. Querying SFU Router RTP Capabilities...');
+          
+          ws.send(JSON.stringify({ type: 'sfu-get-router-rtp-capabilities' }));
+          
+          sfuConnected = true;
+          document.getElementById('sfu-call-state').textContent = 'CONNECTING';
+          document.getElementById('sfu-call-state').className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-950/40 text-indigo-400 font-bold uppercase border border-indigo-900/30 animate-pulse';
+          
+          document.getElementById('btn-join-sfu').disabled = true;
+          document.getElementById('btn-leave-sfu').disabled = false;
+        } catch (err) {
+          logMessage('sys', `Failed to acquire local media or connect SFU: ${err.message}`);
+          leaveSFUCall();
+        }
+      }
+
+      function leaveSFUCall() {
+        if (!sfuConnected && !sfuLocalStream) return;
+        logMessage('sys', 'Teardown active SFU transports, producers, and consumers.');
+
+        sfuConnected = false;
+        
+        // Stop all local tracks
+        if (sfuLocalStream) {
+          sfuLocalStream.getTracks().forEach(track => track.stop());
+          sfuLocalStream = null;
+        }
+
+        // Close sub-connections
+        sfuSubConnections.forEach((pc) => {
+          pc.close();
+        });
+        sfuSubConnections.clear();
+
+        // Close consumers
+        sfuConsumers.forEach((consumer) => {
+          if (consumer.pc) {
+            consumer.pc.close();
+          }
+          removeSFUVideoTile(consumer.userId);
+        });
+        sfuConsumers.clear();
+        sfuProducers.clear();
+
+        sfuSendTransportId = null;
+
+        // Clean UI
+        const localVideo = document.getElementById('sfu-local-video');
+        if (localVideo) localVideo.srcObject = null;
+        
+        document.getElementById('sfu-local-tile').classList.add('hidden');
+        document.getElementById('sfu-empty-grid-msg').classList.remove('hidden');
+        
+        // Remove all other video tiles in the grid
+        const grid = document.getElementById('sfu-video-grid');
+        if (grid) {
+          const tiles = grid.querySelectorAll('.sfu-remote-tile');
+          tiles.forEach(tile => tile.remove());
+        }
+
+        document.getElementById('sfu-call-state').textContent = 'DISCONNECTED';
+        document.getElementById('sfu-call-state').className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-950 text-slate-500 font-bold';
+
+        const btnJoinSFU = document.getElementById('btn-join-sfu');
+        if (btnJoinSFU && ws && ws.readyState === WebSocket.OPEN) {
+          btnJoinSFU.disabled = false;
+        }
+        const btnLeaveSFU = document.getElementById('btn-leave-sfu');
+        if (btnLeaveSFU) {
+          btnLeaveSFU.disabled = true;
+        }
+      }
+
+      function onSFURouterRtpCapabilities(payload) {
+        logMessage('sys', 'SFU Router capabilities received. Creating Outbound WebRtcTransport...');
+        ws.send(JSON.stringify({
+          type: 'sfu-create-transport',
+          direction: 'send'
+        }));
+      }
+
+      function onSFUTransportCreated(payload) {
+        const { id, direction, iceParameters, iceCandidates, dtlsParameters } = payload;
+        logMessage('sys', `SFU WebRtcTransport created for direction: "${direction}" (ID: ${id})`);
+
+        if (direction === 'send') {
+          sfuSendTransportId = id;
+          
+          // Connect transport on server side
+          logMessage('sys', `Connecting Send Transport ${id} with simulated DTLS parameters...`);
+          ws.send(JSON.stringify({
+            type: 'sfu-connect-transport',
+            transportId: id,
+            dtlsParameters: dtlsParameters
+          }));
+        } else {
+          // Recv transport created for a specific consumer stream
+          const { producerId, peerUserId, kind } = payload;
+          logMessage('sys', `Initializing Recv Transport to consume producer ${producerId} (kind: ${kind})`);
+          
+          ws.send(JSON.stringify({
+            type: 'sfu-connect-transport',
+            transportId: id,
+            dtlsParameters: dtlsParameters
+          }));
+
+          // Confirm and trigger consume pipeline
+          ws.send(JSON.stringify({
+            type: 'sfu-consume',
+            transportId: id,
+            producerId: producerId
+          }));
+        }
+      }
+
+      function onSFUTransportConnected(payload) {
+        const { transportId } = payload;
+        logMessage('sys', `SFU WebRtcTransport ${transportId} successfully connected.`);
+
+        // If it's our send transport, let's publish our tracks!
+        if (transportId === sfuSendTransportId) {
+          if (sfuLocalStream) {
+            sfuLocalStream.getTracks().forEach(track => {
+              logMessage('sys', `Producing local track kind: "${track.kind}" to the SFU Router...`);
+              ws.send(JSON.stringify({
+                type: 'sfu-produce',
+                transportId: sfuSendTransportId,
+                kind: track.kind,
+                rtpParameters: {
+                  codec: track.kind === 'video' ? 'video/VP8' : 'audio/opus'
+                }
+              }));
+            });
+          }
+        }
+      }
+
+      function onSFUProduced(payload) {
+        const { producerId, kind } = payload;
+        logMessage('sys', `SFU registered our local track successfully. Created Producer ID: ${producerId} (${kind})`);
+        
+        // Find corresponding local track and store it
+        if (sfuLocalStream) {
+          const track = sfuLocalStream.getTracks().find(t => t.kind === kind);
+          if (track) {
+            sfuProducers.set(producerId, { kind, track });
+          }
+        }
+
+        // Once both audio & video are produced, mark state as connected
+        if (sfuProducers.size >= 1) {
+          document.getElementById('sfu-call-state').textContent = 'PRODUCING';
+          document.getElementById('sfu-call-state').className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/40 text-emerald-400 font-bold uppercase border border-emerald-900/30 shadow shadow-emerald-500/20';
+        }
+      }
+
+      function onSFUNewProducer(payload) {
+        const { producerId, userId, kind } = payload;
+        if (!sfuConnected) return;
+
+        logMessage('sys', `SFU Alert: New producer detected in room: User "${userId}" is producing "${kind}" (Producer ID: ${producerId})`);
+        
+        // Request a recv transport to consume this track
+        ws.send(JSON.stringify({
+          type: 'sfu-create-transport',
+          direction: 'recv',
+          producerId,
+          peerUserId: userId,
+          kind
+        }));
+      }
+
+      function onSFUConsumed(payload) {
+        const { id: consumerId, producerId, kind, rtpParameters } = payload;
+        logMessage('sys', `SFU registered subscriber Consumer ID: ${consumerId} for producer ${producerId}`);
+      }
+
+      function onSFUProducerClosed(payload) {
+        const { producerId, userId } = payload;
+        logMessage('sys', `SFU Alert: Producer closed: User "${userId}" stopped track "${producerId}"`);
+
+        // Find and clean associated consumer
+        sfuConsumers.forEach((consumer, consumerId) => {
+          if (consumer.producerId === producerId) {
+            if (consumer.pc) {
+              consumer.pc.close();
+            }
+            sfuConsumers.delete(consumerId);
+          }
+        });
+
+        // If no more consumers are active from this user, remove video tile
+        let hasActiveTracks = false;
+        sfuConsumers.forEach(c => {
+          if (c.userId === userId) hasActiveTracks = true;
+        });
+
+        if (!hasActiveTracks) {
+          removeSFUVideoTile(userId);
+        }
+      }
+
+      async function onSFUNegotiate(payload) {
+        const { step, producerId, consumerId, sdp, candidate, senderId, targetId, kind } = payload;
+
+        // --- SENDER / PRODUCER SIDE ---
+        if (step === 'offer-request') {
+          logMessage('sys', `Negotiating outbound stream for Consumer ${consumerId} to target peer ${targetId}...`);
+          
+          const pc = new RTCPeerConnection(iceConfiguration);
+          sfuSubConnections.set(consumerId, pc);
+
+          // Get the local track we are producing
+          const producer = sfuProducers.get(producerId);
+          if (producer && producer.track) {
+            pc.addTrack(producer.track, sfuLocalStream);
+          }
+
+          // Handle candidate gathering
+          pc.onicecandidate = (event) => {
+            if (event.candidate) {
+              ws.send(JSON.stringify({
+                type: 'sfu-negotiate',
+                step: 'ice-candidate',
+                consumerId,
+                targetId,
+                candidate: event.candidate
+              }));
+            }
+          };
+
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+
+          ws.send(JSON.stringify({
+            type: 'sfu-negotiate',
+            step: 'offer',
+            producerId,
+            consumerId,
+            targetId,
+            sdp: pc.localDescription
+          }));
+        }
+        
+        else if (step === 'answer') {
+          logMessage('sys', `Received negotiation answer for Consumer ${consumerId} from peer ${senderId}`);
+          const pc = sfuSubConnections.get(consumerId);
+          if (pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+          }
+        }
+
+        // --- RECEIVER / CONSUMER SIDE ---
+        else if (step === 'offer') {
+          logMessage('sys', `Received stream negotiation offer from Producer user ${senderId} for Consumer ${consumerId}`);
+          
+          const pc = new RTCPeerConnection(iceConfiguration);
+          
+          const consumerInfo = {
+            pc,
+            userId: senderId,
+            producerId,
+            kind
+          };
+          sfuConsumers.set(consumerId, consumerInfo);
+
+          // Listen for incoming media track
+          pc.ontrack = (event) => {
+            logMessage('sys', `Stream Track delivered successfully from peer ${senderId} (kind: ${kind})`);
+            addSFUVideoTile(senderId, event.streams[0]);
+          };
+
+          // Handle ICE candidates
+          pc.onicecandidate = (event) => {
+            if (event.candidate) {
+              ws.send(JSON.stringify({
+                type: 'sfu-negotiate',
+                step: 'ice-candidate',
+                consumerId,
+                targetId: senderId,
+                candidate: event.candidate
+              }));
+            }
+          };
+
+          await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+
+          ws.send(JSON.stringify({
+            type: 'sfu-negotiate',
+            step: 'answer',
+            producerId,
+            consumerId,
+            targetId: senderId,
+            sdp: pc.localDescription
+          }));
+        }
+
+        // --- SHARED ICE ROUTING ---
+        else if (step === 'ice-candidate') {
+          // If we are consumer side
+          const consumer = sfuConsumers.get(consumerId);
+          if (consumer && consumer.pc) {
+            try {
+              await consumer.pc.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch(e) {}
+          }
+          // If we are producer side
+          const pc = sfuSubConnections.get(consumerId);
+          if (pc) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch(e) {}
+          }
+        }
+      }
+
+      function addSFUVideoTile(userId, stream) {
+        const grid = document.getElementById('sfu-video-grid');
+        if (!grid) return;
+        
+        // Check if tile already exists
+        let tile = document.getElementById(`sfu-tile-${userId}`);
+        if (!tile) {
+          tile = document.createElement('div');
+          tile.id = `sfu-tile-${userId}`;
+          tile.className = 'sfu-remote-tile relative bg-slate-900 rounded-md overflow-hidden aspect-video border border-slate-800/50';
+          
+          const video = document.createElement('video');
+          video.id = `sfu-video-${userId}`;
+          video.autoplay = true;
+          video.playsInline = true;
+          video.className = 'w-full h-full object-cover';
+          
+          const label = document.createElement('span');
+          label.className = 'absolute bottom-1 right-1 text-[8px] bg-slate-950/80 px-1 py-0.5 rounded text-slate-300 font-mono';
+          label.textContent = userId;
+
+          tile.appendChild(video);
+          tile.appendChild(label);
+          grid.appendChild(tile);
+        }
+
+        const videoEl = document.getElementById(`sfu-video-${userId}`);
+        if (videoEl && videoEl.srcObject !== stream) {
+          videoEl.srcObject = stream;
+        }
+
+        document.getElementById('sfu-empty-grid-msg').classList.add('hidden');
+      }
+
+      function removeSFUVideoTile(userId) {
+        const tile = document.getElementById(`sfu-tile-${userId}`);
+        if (tile) {
+          tile.remove();
+        }
+
+        // If no more tiles left (except local), show empty msg
+        const grid = document.getElementById('sfu-video-grid');
+        if (grid) {
+          const remoteTiles = grid.querySelectorAll('.sfu-remote-tile');
+          const localTileHidden = document.getElementById('sfu-local-tile').classList.contains('hidden');
+          
+          if (remoteTiles.length === 0 && localTileHidden) {
+            document.getElementById('sfu-empty-grid-msg').classList.remove('hidden');
+          }
+        }
       }
     </script>
   </body>

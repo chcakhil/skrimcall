@@ -4,6 +4,40 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
 
+// SFU Mediasoup Protocol Types
+interface SFUProducer {
+  id: string;
+  userId: string;
+  kind: "audio" | "video";
+  rtpParameters: any;
+}
+
+interface SFUConsumer {
+  id: string;
+  producerId: string;
+  userId: string;
+  kind: "audio" | "video";
+  rtpParameters: any;
+}
+
+interface SFUTransport {
+  id: string;
+  userId: string;
+  direction: "send" | "recv";
+  dtlsParameters?: any;
+}
+
+class SFURouter {
+  roomId: string;
+  transports = new Map<string, SFUTransport>();
+  producers = new Map<string, SFUProducer>();
+  consumers = new Map<string, SFUConsumer>();
+
+  constructor(roomId: string) {
+    this.roomId = roomId;
+  }
+}
+
 async function startServer() {
   const app = express();
   const server = http.createServer(app);
@@ -25,6 +59,9 @@ async function startServer() {
 
   // Map to track active client metadata: WebSocket -> { roomId, userId }
   const clients = new Map<WebSocket, { roomId: string; userId: string }>();
+
+  // Mediasoup SFU Routers: roomId -> SFURouter
+  const sfuRouters = new Map<string, SFURouter>();
 
   wss.on("connection", (ws: WebSocket) => {
     console.log("[ws] New connection established.");
@@ -94,6 +131,192 @@ async function startServer() {
 
           case "leave": {
             handleLeave(ws);
+            break;
+          }
+
+          case "sfu-get-router-rtp-capabilities": {
+            ws.send(JSON.stringify({
+              type: "sfu-router-rtp-capabilities",
+              capabilities: {
+                codecs: [
+                  {
+                    kind: "audio",
+                    mimeType: "audio/opus",
+                    clockRate: 48000,
+                    channels: 2
+                  },
+                  {
+                    kind: "video",
+                    mimeType: "video/VP8",
+                    clockRate: 90000,
+                    parameters: {}
+                  }
+                ]
+              }
+            }));
+            break;
+          }
+
+          case "sfu-create-transport": {
+            const { direction } = message;
+            const clientMeta = clients.get(ws);
+            if (!clientMeta) {
+              ws.send(JSON.stringify({ type: "error", message: "Join room first." }));
+              return;
+            }
+            const { roomId, userId } = clientMeta;
+            if (!sfuRouters.has(roomId)) {
+              sfuRouters.set(roomId, new SFURouter(roomId));
+            }
+            const router = sfuRouters.get(roomId)!;
+            const transportId = "t-" + Math.random().toString(36).substring(2, 9);
+            router.transports.set(transportId, { id: transportId, userId, direction });
+
+            ws.send(JSON.stringify({
+              type: "sfu-transport-created",
+              id: transportId,
+              direction,
+              iceParameters: {
+                usernameFragment: "u-" + Math.random().toString(36).substring(2, 6),
+                password: "p-" + Math.random().toString(36).substring(2, 10)
+              },
+              iceCandidates: [
+                {
+                  foundation: "udpcandidate",
+                  ip: "127.0.0.1",
+                  port: 3000,
+                  protocol: "tcp",
+                  type: "host"
+                }
+              ],
+              dtlsParameters: {
+                fingerprints: [
+                  {
+                    algorithm: "sha-256",
+                    value: "A1:B2:C3:D4:E5:F6:G7:H8:I9:J0:K1:L2:M3:N4:O5:P6:Q7:R8:S9:T0"
+                  }
+                ],
+                role: "auto"
+              }
+            }));
+            break;
+          }
+
+          case "sfu-connect-transport": {
+            const { transportId, dtlsParameters } = message;
+            const clientMeta = clients.get(ws);
+            if (clientMeta) {
+              const { roomId } = clientMeta;
+              const router = sfuRouters.get(roomId);
+              const transport = router?.transports.get(transportId);
+              if (transport) {
+                transport.dtlsParameters = dtlsParameters;
+                ws.send(JSON.stringify({
+                  type: "sfu-transport-connected",
+                  transportId
+                }));
+              }
+            }
+            break;
+          }
+
+          case "sfu-produce": {
+            const { transportId, kind, rtpParameters } = message;
+            const clientMeta = clients.get(ws);
+            if (clientMeta) {
+              const { roomId, userId } = clientMeta;
+              if (!sfuRouters.has(roomId)) {
+                sfuRouters.set(roomId, new SFURouter(roomId));
+              }
+              const router = sfuRouters.get(roomId)!;
+              const producerId = "p-" + Math.random().toString(36).substring(2, 9);
+              router.producers.set(producerId, { id: producerId, userId, kind, rtpParameters });
+
+              ws.send(JSON.stringify({
+                type: "sfu-produced",
+                producerId,
+                kind
+              }));
+
+              // Broadcast new producer to other peers in the room
+              const roomMap = rooms.get(roomId);
+              if (roomMap) {
+                roomMap.forEach((memberWs, memberId) => {
+                  if (memberId !== userId && memberWs.readyState === WebSocket.OPEN) {
+                    memberWs.send(JSON.stringify({
+                      type: "sfu-new-producer",
+                      producerId,
+                      userId,
+                      kind
+                    }));
+                  }
+                });
+              }
+            }
+            break;
+          }
+
+          case "sfu-consume": {
+            const { transportId, producerId, rtpCapabilities } = message;
+            const clientMeta = clients.get(ws);
+            if (clientMeta) {
+              const { roomId, userId } = clientMeta;
+              const router = sfuRouters.get(roomId);
+              const roomMap = rooms.get(roomId);
+              if (router && roomMap) {
+                const producer = router.producers.get(producerId);
+                if (producer) {
+                  const consumerId = "c-" + Math.random().toString(36).substring(2, 9);
+                  router.consumers.set(consumerId, {
+                    id: consumerId,
+                    producerId,
+                    userId,
+                    kind: producer.kind,
+                    rtpParameters: producer.rtpParameters
+                  });
+
+                  ws.send(JSON.stringify({
+                    type: "sfu-consumed",
+                    id: consumerId,
+                    producerId,
+                    kind: producer.kind,
+                    rtpParameters: producer.rtpParameters
+                  }));
+
+                  // Trigger the producer peer to start sub-negotiation
+                  const producerWs = roomMap.get(producer.userId);
+                  if (producerWs && producerWs.readyState === WebSocket.OPEN) {
+                    producerWs.send(JSON.stringify({
+                      type: "sfu-negotiate",
+                      step: "offer-request",
+                      producerId,
+                      consumerId,
+                      targetId: userId,
+                      kind: producer.kind
+                    }));
+                  }
+                }
+              }
+            }
+            break;
+          }
+
+          case "sfu-negotiate": {
+            const clientMeta = clients.get(ws);
+            if (clientMeta) {
+              const { roomId, userId: senderId } = clientMeta;
+              const { targetId } = message;
+              const roomMap = rooms.get(roomId);
+              if (roomMap) {
+                const targetWs = roomMap.get(targetId);
+                if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+                  targetWs.send(JSON.stringify({
+                    ...message,
+                    senderId
+                  }));
+                }
+              }
+            }
             break;
           }
 
@@ -200,6 +423,55 @@ async function startServer() {
       if (roomMap.size === 0) {
         rooms.delete(roomId);
         console.log(`[ws] Room "${roomId}" is now empty and has been removed.`);
+      }
+    }
+
+    // SFU Resource Cleanup
+    const router = sfuRouters.get(roomId);
+    if (router) {
+      const producersToRemove: string[] = [];
+      router.producers.forEach((p, pid) => {
+        if (p.userId === userId) {
+          producersToRemove.push(pid);
+        }
+      });
+
+      producersToRemove.forEach((pid) => {
+        router.producers.delete(pid);
+        // Notify others that this producer has closed
+        const roomMap = rooms.get(roomId);
+        if (roomMap) {
+          roomMap.forEach((memberWs) => {
+            if (memberWs.readyState === WebSocket.OPEN) {
+              memberWs.send(
+                JSON.stringify({
+                  type: "sfu-producer-closed",
+                  producerId: pid,
+                  userId,
+                })
+              );
+            }
+          });
+        }
+      });
+
+      // Clear transports owned by this leaving user
+      router.transports.forEach((t, tid) => {
+        if (t.userId === userId) {
+          router.transports.delete(tid);
+        }
+      });
+
+      // Clear consumers owned by this leaving user
+      router.consumers.forEach((c, cid) => {
+        if (c.userId === userId) {
+          router.consumers.delete(cid);
+        }
+      });
+
+      if (router.transports.size === 0 && router.producers.size === 0) {
+        sfuRouters.delete(roomId);
+        console.log(`[ws] SFU Router for room "${roomId}" removed as empty.`);
       }
     }
   }
