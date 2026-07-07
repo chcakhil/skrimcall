@@ -73,6 +73,24 @@ export type {
 } from './lib/crypto/attachments';
 
 // ----------------------------------------------------------------------------
+// SECURE KEY STORAGE MODULE [STATUS: ACTIVE]
+// ----------------------------------------------------------------------------
+export {
+  unlockKeyStore,
+  saveIdentity,
+  loadIdentity,
+  saveRatchetState,
+  loadRatchetState,
+  wipeKeyStore,
+  lockKeyStore,
+  isKeyStoreLocked,
+} from './lib/crypto/keyStorage';
+
+export type {
+  SerializedRatchetState,
+} from './lib/crypto/keyStorage';
+
+// ----------------------------------------------------------------------------
 // 2. SIGNALING MODULE [STATUS: PLANNED - COMING IN PHASE 2]
 // ----------------------------------------------------------------------------
 export {
