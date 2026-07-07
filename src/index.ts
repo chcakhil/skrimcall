@@ -22,6 +22,22 @@ export {
   decryptMessage,
 } from './lib/crypto/session';
 
+export {
+  createGroupSession,
+  generateSenderKeyDistributionPayload,
+  addSenderKeyFromPeer,
+  rotateGroupKeyOnMemberLeave,
+  encryptGroupMessage,
+  decryptGroupMessage,
+} from './lib/crypto/senderKeys';
+
+export type {
+  GroupSession,
+  SenderKeyState,
+  GroupDistributionPayload,
+  EncryptedGroupMessage,
+} from './lib/crypto/senderKeys';
+
 export type {
   SessionConfig,
   InitiatorConfig,
