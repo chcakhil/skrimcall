@@ -54,6 +54,11 @@
               <input type="text" id="user-id" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono" placeholder="Enter userId..." />
             </div>
 
+            <div>
+              <label for="auth-token" class="block text-xs font-medium text-slate-400 mb-1">Authentication Token</label>
+              <input type="text" id="auth-token" value="skrim-test-html-token-123" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono" placeholder="Enter auth token..." />
+            </div>
+
             <div class="grid grid-cols-2 gap-3 pt-2">
               <button id="btn-connect" onclick="connectAndJoin()" class="w-full bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium py-2 rounded-lg transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-400">
                 Join Room
@@ -346,6 +351,7 @@
     <!-- JS Logic -->
     <script>
       let ws = null;
+      let nextSeq = 1; // Sequence counter for outgoing messages to prevent replay attacks
       let currentRoomId = null;
       let currentUserId = null;
       let roomMembers = [];
@@ -461,6 +467,7 @@
       function connectWS(role, callback) {
         const roomId = document.getElementById('room-id').value.trim();
         const userId = document.getElementById('user-id').value.trim() || ('peer-' + Math.floor(Math.random() * 9000 + 1000));
+        const token = document.getElementById('auth-token').value.trim();
         document.getElementById('user-id').value = userId;
 
         if (!roomId) {
@@ -470,11 +477,12 @@
 
         currentRoomId = roomId;
         currentUserId = userId;
+        nextSeq = 1; // Reset signaling sequence number for new socket session
 
         // If WebSocket is already open, just join the room with role!
         if (ws && ws.readyState === WebSocket.OPEN) {
           document.getElementById('sess-info').textContent = `${userId} @ ${roomId} [${role.toUpperCase()}]`;
-          const joinPayload = { type: 'join', roomId, userId, role };
+          const joinPayload = { type: 'join', roomId, userId, role, token };
           ws.send(JSON.stringify(joinPayload));
           logMessage('out', joinPayload);
           if (callback) callback();
@@ -499,6 +507,7 @@
           
           document.getElementById('room-id').disabled = true;
           document.getElementById('user-id').disabled = true;
+          document.getElementById('auth-token').disabled = true;
 
           // Enable signaling buttons
           document.getElementById('btn-offer').disabled = false;
@@ -514,7 +523,7 @@
           document.getElementById('sess-info').textContent = `${userId} @ ${roomId} [${role.toUpperCase()}]`;
 
           // Send join message
-          const joinPayload = { type: 'join', roomId, userId, role };
+          const joinPayload = { type: 'join', roomId, userId, role, token };
           ws.send(JSON.stringify(joinPayload));
           logMessage('out', joinPayload);
 
@@ -629,6 +638,7 @@
 
         document.getElementById('room-id').disabled = false;
         document.getElementById('user-id').disabled = false;
+        document.getElementById('auth-token').disabled = false;
 
         document.getElementById('btn-offer').disabled = true;
         document.getElementById('btn-answer').disabled = true;

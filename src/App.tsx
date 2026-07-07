@@ -48,11 +48,13 @@ export default function App() {
   // WebRTC Tab States
   const [roomId, setRoomId] = useState("skrim-dev-room");
   const [userId, setUserId] = useState("");
+  const [authToken, setAuthToken] = useState("skrim-mock-token-abc123");
   const [connected, setConnected] = useState(false);
   const [members, setMembers] = useState<string[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [targetId, setTargetId] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
+  const nextSeqRef = useRef<number>(1);
   const logsEndRef = useRef<HTMLDivElement | null>(null);
 
   // Real 1:1 WebRTC Call States
@@ -160,7 +162,12 @@ export default function App() {
       },
       onSignalingMessage: (msg) => {
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify(msg));
+          const enrichedMsg = {
+            ...msg,
+            seq: nextSeqRef.current++,
+            timestamp: new Date().toISOString(),
+          };
+          wsRef.current.send(JSON.stringify(enrichedMsg));
         }
       },
       onConnStateChange: (state) => {
@@ -225,6 +232,8 @@ export default function App() {
       wsRef.current.close();
     }
 
+    nextSeqRef.current = 1; // Reset sequence counter on new connection
+
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
 
@@ -237,8 +246,8 @@ export default function App() {
       setConnected(true);
       addLog("sys", "CONNECTED", `Connected successfully as ${userId}`);
 
-      // Send join message
-      const joinPayload = { type: "join", roomId, userId };
+      // Send join message with required auth token
+      const joinPayload = { type: "join", roomId, userId, token: authToken };
       ws.send(JSON.stringify(joinPayload));
       addLog("out", "join", joinPayload);
     };
@@ -1129,6 +1138,19 @@ export default function App() {
                       className="flex-1 bg-slate-950 border border-slate-800 focus:border-sky-500 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none font-mono disabled:opacity-50 transition-colors"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Authentication Token</label>
+                  <input
+                    type="text"
+                    value={authToken}
+                    onChange={(e) => setAuthToken(e.target.value)}
+                    disabled={connected}
+                    placeholder="Enter auth token..."
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none font-mono disabled:opacity-50 transition-colors"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">Required to join. Tested server-side to reject empty tokens.</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 pt-2">
