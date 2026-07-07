@@ -252,3 +252,130 @@ To keep calls stable over weak network topologies:
 5. Click **Start Video Call** from one of the devices.
 6. Click **Accept** on the other device and grant microphone/camera permissions.
 7. Observe true cross-device peer-to-peer audio and video stream delivery across physical hardware! If using your phone, use the **Active Camera Device** switcher to swap between front selfie-views and back main cameras.
+
+---
+
+## 🛡️ End-to-End Cryptographic Message Encryption (libsodium-wrappers)
+
+We have built a client-side End-to-End Message Encryption (E2EE) suite using **libsodium** (via the `libsodium-wrappers` npm package) supporting secure asymmetric cryptographic operations. This module is designed to ensure that user communications remain strictly confidential, where only the intended recipient can read the message.
+
+### 🔑 Cryptographic Architecture
+
+1. **Client-Side Key Generation ("Signup")**:
+   - Clients generate a Curve25519 public/private keypair client-side in the browser using libsodium's `crypto_box_keypair()`.
+   - **Zero-Knowledge Privacy**: The private key is retained strictly in the client's transient in-memory state; it is never transmitted to the server or saved to persistent logs.
+
+2. **Server-Side Key-Distribution Directory**:
+   - A simple in-memory public-key infrastructure (PKI) registry is mounted on the Express server with two REST endpoints:
+     - `POST /register-key`: Registers a user handle with their client-generated Base64-encoded public key.
+     - `GET /key/:userId`: Resolves a given user handle to retrieve their registered public key.
+
+3. **Asymmetric Box Encryption**:
+   - `encryptMessage(plaintext, recipientPublicKey, senderPrivateKey)`:
+     - Generates a cryptographically secure, random 24-byte nonce using `randombytes_buf()`.
+     - Encrypts the plaintext using libsodium's `crypto_box_easy()`.
+     - Prepends the 24-byte nonce to the encrypted payload to produce a combined buffer: `[nonce (24 bytes)][ciphertext]`.
+     - Converts the combined buffer into a single compact Base64 string for delivery.
+   - `decryptMessage(combinedBase64, senderPublicKey, recipientPrivateKey)`:
+     - Parses the combined Base64 ciphertext.
+     - Splits the first 24 bytes as the unique message nonce, and the remaining bytes as the encrypted payload.
+     - Decrypts and authenticates the message using `crypto_box_open_easy()`.
+     - Converts the decrypted bytes back to the original UTF-8 string.
+
+4. **Fail-Closed Guarantee**:
+   - If an unauthorized party tries to decrypt the ciphertext (e.g., using the wrong private key), or if someone tampers with the sender's public key or ciphertext, libsodium will fail authentication.
+   - The library catches any failure and throws a clear, handled error: `"Decryption failed: invalid keys or corrupted ciphertext"`. No garbage data or corrupted characters are ever leaked to the UI or logs.
+
+---
+
+### 💻 Key Registry API Specification
+
+#### 1. Register Public Key
+* **Endpoint**: `POST /register-key`
+* **Content-Type**: `application/json`
+* **Payload**:
+```json
+{
+  "userId": "Alice",
+  "publicKey": "base64EncodedPublicKeyString..."
+}
+```
+* **Response (Success)**:
+```json
+{
+  "success": true,
+  "message": "Public key for 'Alice' registered successfully"
+}
+```
+
+#### 2. Retrieve Public Key
+* **Endpoint**: `GET /key/:userId`
+* **Response (Success)**:
+```json
+{
+  "userId": "Alice",
+  "publicKey": "base64EncodedPublicKeyString..."
+}
+```
+* **Response (Error - User Not Found)**:
+```json
+{
+  "success": false,
+  "error": "Public key not found for user 'Alice'"
+}
+```
+
+---
+
+### 🧪 Automated Unit Testing
+
+We have included a full suite of automated unit tests covering the E2EE capabilities, implemented using **Vitest**.
+
+#### Test Scope:
+1. **Key Generation**: Validates that client-generated keys are non-empty, valid Base64 encoded strings.
+2. **Happy Path E2EE**: Simulates Alice encrypting a message for Bob, Bob resolving Alice's key and successfully decrypting it to verify the exact plaintext matches.
+3. **Ciphertext Security**: Assures that the human-readable plaintext is never stored or visible in plain view within the base64 ciphertext.
+4. **Wrong Recipient Fail-Closed**: Verifies that Charlie (intruder) trying to decrypt Alice's message with Charlie's private key fails immediately and throws an explicit `Decryption failed` error.
+5. **Spoofed Sender Fail-Closed**: Verifies that if Bob tries to decrypt Alice's message but uses Charlie's spoofed public key instead of Alice's public key, the authentication check fails and throws a decryption error.
+
+#### To Run the Tests:
+Run the following command in your terminal:
+```bash
+npm run test
+```
+The Vitest test engine will run the tests in single-run mode and log the results:
+```text
+ RUN  v4.1.10 /app/applet
+ ✓ src/lib/encryption.test.ts (5 tests) 23ms
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+```
+
+---
+
+### 🖥️ Manual Browser Testing & Playground
+
+To test the E2EE suite interactively in the browser:
+
+1. Start your local environment (`npm run dev`) and open the main portal.
+2. Ensure the **libsodium E2E Encryption** tab is active in the top navbar.
+3. **One-Click Simulator**:
+   - In the left sidebar under **Instant 3-User Simulator**, click **Run Full Simulation**.
+   - This triggers an automated sequence that creates three users (Ann, Bob, Charlie) client-side, registers them with the server APIs, encrypts a message from Ann to Bob, decrypts it on Bob's panel (success), and tests Charlie trying to decrypt (fail-closed check).
+   - Full logs of this lifecycle will scroll in real-time in the **Cryptographic Operation Logs** console!
+4. **Manual Multi-Tab Testing**:
+   - Open two browser tabs side-by-side to `http://localhost:3000`.
+   - **Tab 1 ("Alice")**:
+     - Type `Alice` in the handle, click **Gen Keys**, then click **Register Alice's Key**.
+   - **Tab 2 ("Bob")**:
+     - Type `Bob` in the handle, click **Gen Keys**, then click **Register Bob's Key**.
+   - **In Tab 1 ("Alice")**:
+     - Under *Recipient Public Key Lookup*, type `Bob` and click **Lookup**. This will fetch Bob's public key from the Express API and populate the encryptor form.
+     - Type a private message, and click **Encrypt Message**.
+     - Copy the produced **Last Encrypted Ciphertext** Base64 string.
+   - **In Tab 2 ("Bob")**:
+     - Paste Alice's ciphertext into the **Target Ciphertext** box of the decryptor.
+     - Paste Alice's Public Key (can be queried via lookup on `Alice` first) into the **Sender Public Key** box.
+     - Click **Decrypt E2E** to see Alice's original message restored in perfect clarity!
+     - Click **Test Fail-Closed** to see Bob's decryption instantly block and enter secure fail-closed state when an invalid/unauthorized key is supplied!
+

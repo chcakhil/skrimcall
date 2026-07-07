@@ -46,9 +46,38 @@ async function startServer() {
   // Serve static files from public directory (e.g. test.html)
   app.use(express.static(path.join(process.cwd(), "public")));
 
+  // Enable JSON body parsing for API requests
+  app.use(express.json());
+
+  // Simple in-memory key registry (userId -> publicKeyBase64)
+  const publicKeyRegistry = new Map<string, string>();
+
+  // POST /register-key endpoint to register a user's client-generated public key
+  app.post("/register-key", (req, res) => {
+    const { userId, publicKey } = req.body;
+    if (!userId || !publicKey) {
+      res.status(400).json({ success: false, error: "Missing userId or publicKey in request body" });
+      return;
+    }
+    publicKeyRegistry.set(userId, publicKey);
+    console.log(`[Key Registry] Registered public key for "${userId}"`);
+    res.json({ success: true, message: `Public key for '${userId}' registered successfully` });
+  });
+
+  // GET /key/:userId endpoint to retrieve a user's registered public key
+  app.get("/key/:userId", (req, res) => {
+    const { userId } = req.params;
+    const publicKey = publicKeyRegistry.get(userId);
+    if (!publicKey) {
+      res.status(404).json({ success: false, error: `Public key not found for user '${userId}'` });
+      return;
+    }
+    res.json({ userId, publicKey });
+  });
+
   // API Health Route
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", service: "skrim-calling-signaling" });
+    res.json({ status: "ok", service: "skrim-calling-signaling", registeredKeysCount: publicKeyRegistry.size });
   });
 
   // WebSocket Signaling Setup
