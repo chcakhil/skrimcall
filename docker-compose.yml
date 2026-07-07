@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  # Coturn STUN/TURN Server for WebRTC NAT Traversal
+  # TURN (Traversal Using Relays around NAT) allows video/audio relays when peer-to-peer connection is blocked by strict firewalls/NATs.
+  # STUN (Session Traversal Utilities for NAT) allows clients to discover their public IP and port mappings.
+  coturn:
+    image: coturn/coturn:latest
+    container_name: coturn-server
+    restart: unless-stopped
+    
+    # Expose standard STUN/TURN listener ports
+    ports:
+      - "3478:3478/udp" # Standard STUN/TURN over UDP
+      - "3478:3478/tcp" # Standard STUN/TURN over TCP
+      - "5349:5349/udp" # Secure TURN over TLS (DTLS)
+      - "5349:5349/tcp" # Secure TURN over TLS (TCP)
+
+    # CLI Command Configuration for Coturn
+    # -v: Enables verbose logging to output credential checking and ICE peer state logs
+    # --lt-cred-mech: Enables the mandatory Long Term Credential Mechanism for TURN authentication
+    # --user: Credentials for local authentication. Format: "<username>:<password>"
+    # --realm: Authentication realm (defaults to domain, e.g., "skrimcalling.local")
+    # --external-ip: External public/local address mapping (use 127.0.0.1 for local localhost loopback test)
+    command: >
+      turnserver
+      -v
+      --lt-cred-mech
+      --user=skrimuser:skrimpassword
+      --realm=skrimcalling.local
+      --external-ip=127.0.0.1

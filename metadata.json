@@ -1,0 +1,6 @@
+{
+  "name": "Skrim Calling",
+  "description": "A standalone room-based WebSocket signaling server and WebRTC test suite for room-based peer negotiations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

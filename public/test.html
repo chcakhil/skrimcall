@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Skrim-Calling Signaling Test Panel</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      ::-webkit-scrollbar {
+        width: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #1e293b;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #475569;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col antialiased">
+    <!-- Header -->
+    <header class="border-b border-slate-800 bg-slate-900/50 backdrop-blur px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="h-3 w-3 rounded-full bg-emerald-500 animate-pulse" id="status-dot"></div>
+        <h1 class="text-lg font-semibold tracking-tight">skrim-calling <span class="text-slate-500 text-xs font-normal">Signaling Server v1.0</span></h1>
+      </div>
+      <div class="text-xs font-mono text-slate-400 bg-slate-800 px-3 py-1 rounded-md" id="ws-status">
+        STATUS: DISCONNECTED
+      </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+      
+      <!-- Control Panel (Left Column) -->
+      <section class="lg:col-span-5 flex flex-col space-y-6">
+        
+        <!-- Connection Setup Card -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
+          <h2 class="text-sm font-medium uppercase tracking-wider text-slate-400 mb-4">1. Room Setup & Connection</h2>
+          
+          <div class="space-y-4">
+            <div>
+              <label for="room-id" class="block text-xs font-medium text-slate-400 mb-1">Room ID</label>
+              <input type="text" id="room-id" value="test-room" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono" placeholder="Enter roomId..." />
+            </div>
+            
+            <div>
+              <label for="user-id" class="block text-xs font-medium text-slate-400 mb-1">User ID (Auto-generated if empty)</label>
+              <input type="text" id="user-id" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono" placeholder="Enter userId..." />
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 pt-2">
+              <button id="btn-connect" onclick="connectAndJoin()" class="w-full bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium py-2 rounded-lg transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-400">
+                Join Room
+              </button>
+              <button id="btn-disconnect" onclick="disconnect()" disabled class="w-full bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-300 text-sm font-medium py-2 rounded-lg transition-colors cursor-pointer focus:outline-none">
+                Disconnect
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Room Directory Card -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg flex-1 flex flex-col">
+          <h2 class="text-sm font-medium uppercase tracking-wider text-slate-400 mb-2">Room Directory</h2>
+          <p class="text-xs text-slate-500 mb-4">Other peers currently in your room:</p>
+          
+          <div class="flex-1 bg-slate-950 border border-slate-800/80 rounded-lg p-3 overflow-y-auto max-h-[160px] lg:max-h-none">
+            <ul id="members-list" class="space-y-2 text-sm">
+              <li class="text-slate-500 italic text-xs py-1">Not in any room</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- WebRTC Test Signal Panel -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
+          <h2 class="text-sm font-medium uppercase tracking-wider text-slate-400 mb-3">2. Manual Signal Testing</h2>
+          <p class="text-xs text-slate-500 mb-4">Emulate WebRTC negotiation stages with other peers.</p>
+
+          <div class="space-y-3">
+            <div>
+              <label for="target-id" class="block text-xs font-medium text-slate-400 mb-1">Target Peer (Select or Leave blank for room broadcast)</label>
+              <select id="target-id" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono">
+                <option value="">[Broadcast to All]</option>
+              </select>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2 pt-2">
+              <button onclick="sendWebRTCSignal('offer')" id="btn-offer" disabled class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium py-2.5 rounded-lg transition-all cursor-pointer">
+                Send Offer
+              </button>
+              <button onclick="sendWebRTCSignal('answer')" id="btn-answer" disabled class="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium py-2.5 rounded-lg transition-all cursor-pointer">
+                Send Answer
+              </button>
+              <button onclick="sendWebRTCSignal('ice-candidate')" id="btn-ice" disabled class="bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium py-2.5 rounded-lg transition-all cursor-pointer">
+                Send ICE
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- Logging Terminal (Right Column) -->
+      <section class="lg:col-span-7 flex flex-col bg-slate-900 border border-slate-800 rounded-xl shadow-lg overflow-hidden">
+        <div class="border-b border-slate-800 bg-slate-950 px-5 py-3.5 flex items-center justify-between">
+          <span class="text-sm font-medium uppercase tracking-wider text-slate-300">Signaling Logs</span>
+          <button onclick="clearLogs()" class="text-xs text-slate-400 hover:text-white bg-slate-850 border border-slate-800 hover:bg-slate-800 px-2.5 py-1 rounded-md transition-colors cursor-pointer">
+            Clear Logs
+          </button>
+        </div>
+
+        <!-- Terminal Logs Panel -->
+        <div id="logs" class="flex-1 bg-slate-950 p-4 font-mono text-xs overflow-y-auto space-y-3 min-h-[400px]">
+          <div class="text-slate-500 italic">[System] Welcome to skrim-calling signaling panel. Enter a room ID and join to begin testing WebRTC messages.</div>
+        </div>
+
+        <!-- Bottom Status Bar -->
+        <div class="bg-slate-950 border-t border-slate-800 px-5 py-2.5 flex items-center justify-between text-[11px] text-slate-500 font-mono">
+          <span>Active Client Session: <span id="sess-info" class="text-slate-400">none</span></span>
+          <span>WebSockets Protocol</span>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- JS Logic -->
+    <script>
+      let ws = null;
+      let currentRoomId = null;
+      let currentUserId = null;
+      let roomMembers = [];
+
+      // Auto-generate userId on load
+      window.onload = () => {
+        const randomId = 'peer-' + Math.floor(Math.random() * 9000 + 1000);
+        document.getElementById('user-id').value = randomId;
+      };
+
+      function logMessage(direction, data) {
+        const logsDiv = document.getElementById('logs');
+        const timestamp = new Date().toLocaleTimeString();
+
+        // Style based on message payload/type
+        let textClass = 'text-slate-300';
+        let badge = '';
+
+        if (direction === 'sys') {
+          textClass = 'text-slate-400 bg-slate-900/50 p-1.5 rounded border border-slate-800/40';
+          badge = `<span class="text-slate-500 font-bold">[SYS]</span>`;
+        } else if (direction === 'in') {
+          if (data.type === 'offer') {
+            textClass = 'text-indigo-400 bg-indigo-950/20 p-2 rounded border border-indigo-900/30';
+            badge = `<span class="text-indigo-500 font-bold">◄ IN (OFFER)</span>`;
+          } else if (data.type === 'answer') {
+            textClass = 'text-emerald-400 bg-emerald-950/20 p-2 rounded border border-emerald-900/30';
+            badge = `<span class="text-emerald-500 font-bold">◄ IN (ANSWER)</span>`;
+          } else if (data.type === 'ice-candidate') {
+            textClass = 'text-amber-400 bg-amber-950/20 p-2 rounded border border-amber-900/30';
+            badge = `<span class="text-amber-500 font-bold">◄ IN (ICE)</span>`;
+          } else if (data.type === 'error') {
+            textClass = 'text-rose-400 bg-rose-950/20 p-2 rounded border border-rose-900/30 animate-pulse';
+            badge = `<span class="text-rose-500 font-bold">◄ ERROR</span>`;
+          } else {
+            textClass = 'text-sky-400 bg-slate-900 p-2 rounded border border-sky-900/20';
+            badge = `<span class="text-sky-500 font-bold">◄ IN (${data.type.toUpperCase()})</span>`;
+          }
+        } else if (direction === 'out') {
+          textClass = 'text-slate-200 bg-slate-900/30 p-1.5 rounded border border-slate-800/50';
+          badge = `<span class="text-slate-400 font-bold">► OUT (${data.type.toUpperCase()})</span>`;
+        }
+
+        const logItem = document.createElement('div');
+        logItem.className = `space-y-1 ${textClass}`;
+        logItem.innerHTML = `
+          <div class="flex items-center justify-between text-[10px] text-slate-500 font-semibold mb-0.5">
+            <span>${badge}</span>
+            <span>${timestamp}</span>
+          </div>
+          <pre class="overflow-x-auto whitespace-pre-wrap font-mono break-all">${JSON.stringify(data, null, 2)}</pre>
+        `;
+        logsDiv.appendChild(logItem);
+        logsDiv.scrollTop = logsDiv.scrollHeight;
+      }
+
+      function clearLogs() {
+        const logsDiv = document.getElementById('logs');
+        logsDiv.innerHTML = '<div class="text-slate-500 italic">[System] Log cleared. Ready.</div>';
+      }
+
+      function connectAndJoin() {
+        const roomId = document.getElementById('room-id').value.trim();
+        const userId = document.getElementById('user-id').value.trim() || ('peer-' + Math.floor(Math.random() * 9000 + 1000));
+        document.getElementById('user-id').value = userId;
+
+        if (!roomId) {
+          alert('Please enter a room ID.');
+          return;
+        }
+
+        // Establish socket connection
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+        logMessage('sys', `Connecting to WebSocket server at ${wsUrl}...`);
+
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          document.getElementById('ws-status').textContent = 'STATUS: CONNECTED';
+          document.getElementById('ws-status').className = 'text-xs font-mono text-emerald-400 bg-emerald-950/40 px-3 py-1 rounded-md border border-emerald-900/30';
+          document.getElementById('status-dot').className = 'h-3 w-3 rounded-full bg-emerald-400 shadow-lg shadow-emerald-500/50 animate-pulse';
+          
+          document.getElementById('btn-connect').disabled = true;
+          document.getElementById('btn-connect').className = 'w-full bg-slate-800 text-slate-500 text-sm font-medium py-2 rounded-lg transition-colors cursor-not-allowed';
+          document.getElementById('btn-disconnect').disabled = false;
+          
+          // Disable credentials forms
+          document.getElementById('room-id').disabled = true;
+          document.getElementById('user-id').disabled = true;
+
+          // Enable signaling buttons
+          document.getElementById('btn-offer').disabled = false;
+          document.getElementById('btn-answer').disabled = false;
+          document.getElementById('btn-ice').disabled = false;
+
+          currentRoomId = roomId;
+          currentUserId = userId;
+          document.getElementById('sess-info').textContent = `${userId} @ ${roomId}`;
+
+          // Send join message
+          const joinPayload = { type: 'join', roomId, userId };
+          ws.send(JSON.stringify(joinPayload));
+          logMessage('out', joinPayload);
+        };
+
+        ws.onmessage = (event) => {
+          let payload;
+          try {
+            payload = JSON.parse(event.data);
+          } catch (e) {
+            logMessage('sys', `Received raw payload (failed to parse JSON): ${event.data}`);
+            return;
+          }
+
+          logMessage('in', payload);
+
+          // Handle state-tracking actions
+          if (payload.type === 'joined') {
+            roomMembers = payload.members || [];
+            updateMembersUI();
+          } else if (payload.type === 'user-joined') {
+            if (!roomMembers.includes(payload.userId)) {
+              roomMembers.push(payload.userId);
+            }
+            updateMembersUI();
+          } else if (payload.type === 'user-left') {
+            roomMembers = roomMembers.filter(id => id !== payload.userId);
+            updateMembersUI();
+          }
+        };
+
+        ws.onclose = () => {
+          resetUI();
+          logMessage('sys', 'WebSocket connection closed.');
+        };
+
+        ws.onerror = (err) => {
+          logMessage('sys', 'WebSocket connection error occurred.');
+        };
+      }
+
+      function disconnect() {
+        if (ws) {
+          const leavePayload = { type: 'leave' };
+          try {
+            ws.send(JSON.stringify(leavePayload));
+            logMessage('out', leavePayload);
+          } catch(e) {}
+          ws.close();
+        }
+      }
+
+      function resetUI() {
+        ws = null;
+        currentRoomId = null;
+        currentUserId = null;
+        roomMembers = [];
+
+        document.getElementById('ws-status').textContent = 'STATUS: DISCONNECTED';
+        document.getElementById('ws-status').className = 'text-xs font-mono text-slate-400 bg-slate-800 px-3 py-1 rounded-md';
+        document.getElementById('status-dot').className = 'h-3 w-3 rounded-full bg-slate-500 animate-pulse';
+
+        document.getElementById('btn-connect').disabled = false;
+        document.getElementById('btn-connect').className = 'w-full bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium py-2 rounded-lg transition-colors cursor-pointer';
+        document.getElementById('btn-disconnect').disabled = true;
+
+        document.getElementById('room-id').disabled = false;
+        document.getElementById('user-id').disabled = false;
+
+        document.getElementById('btn-offer').disabled = true;
+        document.getElementById('btn-answer').disabled = true;
+        document.getElementById('btn-ice').disabled = true;
+
+        document.getElementById('sess-info').textContent = 'none';
+
+        updateMembersUI();
+      }
+
+      function updateMembersUI() {
+        const list = document.getElementById('members-list');
+        const select = document.getElementById('target-id');
+        
+        // Save current selection
+        const prevSelected = select.value;
+
+        // Clear UI
+        list.innerHTML = '';
+        select.innerHTML = '<option value="">[Broadcast to All]</option>';
+
+        if (roomMembers.length === 0) {
+          list.innerHTML = '<li class="text-slate-500 italic text-xs py-1">No other active peers</li>';
+          return;
+        }
+
+        roomMembers.forEach(memberId => {
+          // List item
+          const li = document.createElement('li');
+          li.className = 'flex items-center justify-between py-1.5 px-2.5 rounded-md bg-slate-900 border border-slate-800/60 font-mono text-xs';
+          li.innerHTML = `
+            <span class="text-slate-300 font-medium">${memberId}</span>
+            <span class="text-[9px] text-emerald-400 uppercase bg-emerald-950/30 border border-emerald-900/20 px-1.5 rounded">Active</span>
+          `;
+          list.appendChild(li);
+
+          // Select option
+          const option = document.createElement('option');
+          option.value = memberId;
+          option.textContent = memberId;
+          if (memberId === prevSelected) {
+            option.selected = true;
+          }
+          select.appendChild(option);
+        });
+      }
+
+      function sendWebRTCSignal(type) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          alert('WebSocket is not connected.');
+          return;
+        }
+
+        const targetId = document.getElementById('target-id').value;
+        const roomId = currentRoomId;
+
+        let payload = {
+          type,
+          roomId,
+          targetId: targetId || undefined
+        };
+
+        // Generate synthetic WebRTC payloads for clean testing
+        if (type === 'offer') {
+          payload.sdp = {
+            type: 'offer',
+            sdp: `v=0\r\no=- ${Math.floor(Math.random() * 1000000)} IN IP4 127.0.0.1\r\ns=Skrim-Call-Test\r\nt=0 0\r\na=group:BUNDLE audio video\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111 103\r\na=setup:actpass\r\na=mid:audio\r\n`
+          };
+        } else if (type === 'answer') {
+          payload.sdp = {
+            type: 'answer',
+            sdp: `v=0\r\no=- ${Math.floor(Math.random() * 1000000)} IN IP4 127.0.0.1\r\ns=Skrim-Call-Test\r\nt=0 0\r\na=group:BUNDLE audio video\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=setup:active\r\na=mid:audio\r\n`
+          };
+        } else if (type === 'ice-candidate') {
+          payload.candidate = {
+            candidate: `candidate:${Math.floor(Math.random() * 1000000000)} 1 UDP ${Math.floor(Math.random() * 100000)} 127.0.0.1 ${Math.floor(Math.random() * 60000 + 1000)} typ host`,
+            sdpMid: 'audio',
+            sdpMLineIndex: 0
+          };
+        }
+
+        ws.send(JSON.stringify(payload));
+        logMessage('out', payload);
+      }
+    </script>
+  </body>
+</html>
