@@ -59,6 +59,20 @@ export type {
 } from './lib/crypto/keyExchange';
 
 // ----------------------------------------------------------------------------
+// ATTACHMENT CRYPTO MODULE [STATUS: ACTIVE]
+// ----------------------------------------------------------------------------
+export {
+  encryptAttachment,
+  decryptAttachment,
+  decryptAttachmentChunks,
+  decryptAttachmentToStream,
+} from './lib/crypto/attachments';
+
+export type {
+  EncryptedAttachment,
+} from './lib/crypto/attachments';
+
+// ----------------------------------------------------------------------------
 // 2. SIGNALING MODULE [STATUS: PLANNED - COMING IN PHASE 2]
 // ----------------------------------------------------------------------------
 export {
